@@ -81,8 +81,8 @@ runs and on a dimension with no scenario the model passed alone.
 | `claude-*` | Anthropic API | `ANTHROPIC_API_KEY` | the leaderboard's models are set in `MODEL_EXTRAS`; a new model runs at the API default | real calls (judges, partner) |
 | `gpt-*` | OpenAI API: chat completions, or the Responses API when a model takes tools with reasoning only there | `OPENAI_API_KEY` | `HARNESS_OPENAI_EFFORT` (below); without it, the API default | real calls: an 8-scenario run of `gpt-6-luna` |
 | `together:<model id>`, e.g. `together:meta-llama/Llama-3.3-70B-Instruct-Turbo` (Meta Llama, Qwen, DeepSeek, Mistral, ...) | Together AI | `TOGETHER_API_KEY` | the leaderboard's models are set in `ROUTE_EXTRA_BODY`; a new model runs at the provider default | real calls (the leaderboard's open models; the Llama example with a tool call) |
-| `gemini-*`, e.g. `gemini-3.8-flash` | Google's OpenAI-compatible endpoint | `GEMINI_API_KEY` | built in: `reasoning_effort: minimal` (`none` on Gemini 2.5 Flash) | mock server only: should work; please report issues |
-| `openrouter:<model id>`, e.g. `openrouter:meta-llama/llama-4-maverick` | OpenRouter | `OPENROUTER_API_KEY` | built in: from OpenRouter's model list (`effort: none` where reasoning can be turned off, else the lowest supported) | mock server only: should work; please report issues |
+| `gemini-*`, e.g. `gemini-3.8-flash` | Google's OpenAI-compatible endpoint | `GEMINI_API_KEY` | built in: `reasoning_effort: minimal` (`none` on Gemini 2.5 Flash) | mock server only: should work; please report issues (Gemini through `openrouter:` is tested) |
+| `openrouter:<model id>`, e.g. `openrouter:google/gemini-3.8-flash` | OpenRouter | `OPENROUTER_API_KEY` | built in: from OpenRouter's model list (`effort: none` where reasoning can be turned off, else the lowest supported) | real calls: 8-scenario runs of Gemini 3.8 Flash and Grok 4.7 |
 | any name in `HARNESS_OPENAI_COMPAT` | any OpenAI-compatible URL | the variable the entry names | the entry's `extra` | real calls: an 8-scenario run of Llama 3.3 70B through Together's URL |
 | any name in `HARNESS_VLLM_ENDPOINTS` | your own vLLM (or other OpenAI-compatible) server | `HARNESS_VLLM_API_KEY` if it needs one | thinking off (`chat_template_kwargs`) | real calls (the Qwen3-14B partner) |
 
@@ -151,8 +151,9 @@ The partner keeps its name, so the runs and the score read as usual. A dedicated
 `"extra": {"chat_template_kwargs": {"enable_thinking": false}}`). A hosted copy is not guaranteed to match the
 leaderboard's local vLLM exactly (quantization, chat template, sampling defaults, and OpenRouter may switch between
 hosts unless its `provider` field pins one), so scores made with it are close to, not the same as, the leaderboard's
-conditions; say which partner host you used when you report them. This mapping was not exercised by a real call here
-(no OpenRouter key): it should work; please report issues.
+conditions; say which partner host you used when you report them. Tested in an 8-scenario run (2026-10-15): thinking
+stayed off and the partner posted on every turn, though it sometimes began a message with its own name, which the local
+copy does not.
 
 ## Repository layout
 
