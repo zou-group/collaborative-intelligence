@@ -267,7 +267,6 @@
 
   // ---------------------------------------------------------------- figure numbers, contents, header
   function numberFigures() {
-    if (document.body.classList.contains('landing')) return;  // the landing page has one figure, unnumbered
     const n = {}, labels = {};
     for (const f of $$('figure.fig')) {
       const cap = $('figcaption', f); if (!cap) continue;
@@ -317,7 +316,7 @@
 
   // ---------------------------------------------------------------- boot
   async function boot() {
-    // a page names the data it needs (the landing page skips the large examples file)
+    // a page can name the data it needs
     const names = (document.body.dataset.data || 'leaderboard,dimensions,examples,findings,dataset').split(',');
     const got = await Promise.all(names.map(n => fetch(`data/${n}.json${VERSION ? '?v=' + VERSION : ''}`).then(r => { if (!r.ok) throw new Error(n); return r.json(); })));
     names.forEach((n, i) => { CI.D[n] = got[i]; });

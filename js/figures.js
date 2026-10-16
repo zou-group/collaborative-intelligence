@@ -34,7 +34,7 @@
     const shown = new Set(ranked.map(m => m.id));
     // the headline is the score on all scenarios; Public and Private are the same score on the released and the held-out
     // scenarios (benchmark/split.json, read by build_data.py)
-    const split = document.body.classList.contains('landing') ? null : L.split;  // the landing page shows the headline score only
+    const split = L.split;
     // one tab for the overall score and one per dimension, the least solved dimension first
     const meanOn = k => { const v = ranked.map(m => m.dims[k]).filter(c => c && c.test !== null).map(c => c.test); return v.reduce((a, b) => a + b, 0) / v.length; };
     const dimKeys = Object.keys(ranked[0].dims).sort((a, b) => meanOn(a) - meanOn(b));
@@ -81,8 +81,15 @@
       hcell('pp pr', 'Private', CI.fmtN(split.n_private), 'Score on the held-out scenarios'));
     const card = el('div', { class: 'lb-card' });
     const tabs = el('div', { class: 'lb-tabs', role: 'tablist', 'aria-label': 'Score shown' },
-      ...[['all', 'Overall', 'The average over the eight dimensions'], ...dimKeys.map(k => [k, CI.dim(k).short, CI.dim(k).name])].map(([k, t, title]) =>
-        el('button', { type: 'button', role: 'tab', 'data-k': k, title, text: t, 'aria-selected': String(k === view), onclick: () => { view = k; render(); } })));
+      ...['all', ...dimKeys].map(k => {
+        const d = k === 'all' ? null : CI.dim(k);
+        const b = el('button', { type: 'button', role: 'tab', 'data-k': k, text: d ? d.short : 'Overall', 'aria-label': d ? d.name : 'Overall', 'aria-selected': String(k === view), onclick: () => { view = k; render(); } });
+        // hovering or focusing a tab explains what that dimension tests and what a good teammate does
+        CI.tipOn(b, () => d
+          ? el('div', { class: 'tab-tip' }, el('b', { text: d.name }), el('p', { text: d.definition }), el('p', { text: 'A good teammate ' + d.good_teammate.charAt(0).toLowerCase() + d.good_teammate.slice(1) }))
+          : el('div', { class: 'tab-tip' }, el('b', { text: 'Overall' }), el('p', { text: 'The average of the eight dimension scores.' })));
+        return b;
+      }));
     let rows = [];
     function render() {
       $$('button', tabs).forEach(b => b.setAttribute('aria-selected', String(b.dataset.k === view)));
