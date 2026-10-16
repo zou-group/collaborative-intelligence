@@ -58,3 +58,6 @@ drawn for this site and is ours to use freely. `../favicon-32.png` and `../apple
 Copyright (c) Microsoft Corporation; the licence text is in `../icons/LICENSE-fluentui-emoji.txt`.
 The one exception is `../icons/robot-teammate.svg`, the Robot emoji with two fills recoloured (body `#CDC4D6` to `#F3D5B5`,
 eyes `#00A6ED` to `#FF822D`) so a scripted teammate reads apart from the model.
+
+`../og-card.png`, the link preview image, sets the title and logo over a painting of a school of fish that Sean Wu made
+with an AI image generator for this site on 2026-10-15.
