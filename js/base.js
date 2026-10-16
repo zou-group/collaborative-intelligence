@@ -298,6 +298,17 @@
   function setupLinks() {
     $$('[data-placeholder]').forEach(a => { a.title = 'Coming soon'; a.setAttribute('aria-disabled', 'true'); a.addEventListener('click', e => e.preventDefault()); });
   }
+  // the BibTeX block's copy button, falling back to selecting the text where the clipboard is refused
+  function setupCite() {
+    for (const box of $$('.cite')) {
+      const btn = $('.cite-copy', box), code = $('code', box);
+      btn.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(code.textContent); btn.textContent = 'Copied'; }
+        catch (err) { const r = document.createRange(); r.selectNodeContents(code); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = 'Selected'; }
+        setTimeout(() => { btn.textContent = 'Copy'; }, 1600);
+      });
+    }
+  }
   function footer() {
     const d = new Date(CI.D.leaderboard.generated + 'T00:00:00Z');
     const nice = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
@@ -315,7 +326,7 @@
     for (const m of CI.D.leaderboard.models) CI.M[m.id] = m;
     CI.F = Object.fromEntries(CI.D.findings.findings.map(f => [f.id, f.data]));
     // each part renders on its own: a problem in one never blanks the rest of the page
-    for (const f of [computeValues, fillValues, setupDialog, ...CI.parts, numberFigures, setupToc, setupLinks, footer]) {
+    for (const f of [computeValues, fillValues, setupDialog, ...CI.parts, numberFigures, setupToc, setupLinks, setupCite, footer]) {
       try { f(); } catch (err) { console.error(`${f.name || 'part'}:`, err); }
     }
     document.documentElement.classList.add('ready');
