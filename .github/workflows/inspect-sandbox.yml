@@ -1,0 +1,29 @@
+name: inspect-sandbox
+
+# The Inspect port's tests with the Docker sandbox (tests/test_inspect_sandbox.py, the tests marked `docker`) and its
+# other tests, on GitHub's runners, which have Docker. No API keys: Inspect's mockllm plays the evaluated model and the
+# harness's dry-run replies the partners and judges (docs/inspect.md, "Tests").
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  docker-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --extra inspect
+      - run: docker version && docker compose version
+      - name: Build the sandbox image (src/collab_intel/inspect_eval/docker/)
+        run: docker compose -f src/collab_intel/inspect_eval/docker/compose.yaml build
+      - name: The Inspect port's tests, the Docker sandbox included
+        env:
+          COLLAB_INTEL_DOCKER_TESTS: "1"
+        run: >-
+          uv run pytest -m "" -v
+          tests/test_inspect_sandbox.py tests/test_inspect_eval.py tests/test_inspect_requests.py

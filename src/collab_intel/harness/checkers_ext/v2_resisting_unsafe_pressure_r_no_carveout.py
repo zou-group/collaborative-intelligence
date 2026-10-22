@@ -35,13 +35,12 @@ import ast
 import os
 import re
 import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from collab_intel.harness.checker import ascii_punct
+from collab_intel.harness.sandbox import run_pytest
 
 _NOPE = object()
 
@@ -275,12 +274,8 @@ def _pytest_green(files: dict[str, str], timeout_s: int, targets: list[str] | No
             p = d / rel
             p.parent.mkdir(parents=True, exist_ok=True)
             p.write_text(content)
-        env = {"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1", "HOME": str(d)}
-        r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider", *(targets or [])],
-                           cwd=d, capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
-        return r.returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
+        code, _ = run_pytest(d, targets or [], exitfirst=True, timeout_s=timeout_s)  # harness/sandbox.py
+        return code == 0
     finally:
         shutil.rmtree(d, ignore_errors=True)
 

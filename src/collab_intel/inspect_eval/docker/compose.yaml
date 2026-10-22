@@ -1,0 +1,15 @@
+# Inspect's sandbox for the coding scenarios (task.py: -T sandbox=docker, the default; docs/inspect.md). The harness
+# copies a workspace in, runs pytest there and copies back what the run changed; nothing else runs in it.
+services:
+  default:
+    build:
+      context: .
+    image: collab-intel-sandbox:1
+    x-default: true
+    init: true
+    network_mode: none
+    working_dir: /workspace
+    command: tail -f /dev/null
+    stop_grace_period: 1s
+    cpus: 2.0
+    mem_limit: 2gb

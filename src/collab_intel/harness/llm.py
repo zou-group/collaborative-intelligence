@@ -7,7 +7,12 @@
                             (any OpenAI-compatible server; HARNESS_VLLM_API_KEY if it needs a key)
   anything in HARNESS_OPENAI_COMPAT, gemini-*, openrouter:<model id>
                             a hosted OpenAI-compatible provider, each model with its own base URL, key variable and
-                            request extras (OPENAI_COMPAT below; gemini-* uses GEMINI_API_KEY, openrouter: OPENROUTER_API_KEY)
+                            request extras (OPENAI_COMPAT below; gemini-* uses GEMINI_API_KEY, openrouter: OPENROUTER_API_KEY,
+                            and every OpenRouter request only reaches zero-data-retention hosts: OPENROUTER_PROVIDER_POLICY)
+  <any of these>@<effort>   the same model at that reasoning effort, e.g. gpt-6-astra@high (EFFORTS below)
+  inspect/<model>, inspect-role/<role>
+                            only inside an Inspect eval (collab_intel.inspect_eval): the model Inspect evaluates, or an
+                            Inspect model role, called through Inspect's model API (INSPECT_PREFIXES below)
 
 Messages use one neutral format so the episode code never sees provider details:
   {"role": "user", "content": str}
@@ -46,6 +51,12 @@ PRICES = {
     "claude-fable-5": (10.00, 50.00), "claude-fable-5-1": (10.00, 50.00),
     "gpt-5": (1.25, 10.00), "gpt-5-mini": (0.25, 2.00), "gpt-5-nano": (0.05, 0.40), "gpt-4.1": (2.00, 8.00),
     "gpt-4.1-mini": (0.40, 1.60),
+    # 2026-10-20: list prices of the direct-API models the table lacked, from OpenRouter's public model list (where Opus 5.5
+    # and Fable 5.1 match the entries above exactly). Before, their calls were logged, and counted by the budget guard,
+    # at the (5, 25) fallback: GPT-6 Astra at half its price, GPT-6.1 Sol, Sonnet 5.5 and Haiku 5.5 above it. A
+    # reasoning-effort variant (<model>@<effort>) is priced as its base model (cost_usd).
+    "gpt-6-astra": (10.00, 50.00), "gpt-6.1-sol": (2.00, 10.00), "gpt-6-luna": (0.10, 0.50),
+    "claude-sonnet-5-5": (2.00, 10.00), "claude-haiku-5-5": (0.10, 0.50),
 }
 # Adaptive-thinking models: thinking tokens count toward max_tokens, so add headroom.
 THINKING_HEADROOM = int(os.environ.get("HARNESS_THINKING_HEADROOM", "2500"))
@@ -73,13 +84,11 @@ MODEL_EXTRAS: dict[str, dict[str, Any]] = {"claude-sonnet-5": {"output_config": 
 RESPONSES_REASONING: dict[str, dict[str, Any]] = {"gpt-6-astra": {"effort": "low"},
                                                   # 2026-10-09: GPT-6.1 Sol accepts low and up (not none/minimal), as Astra
                                                   "gpt-6.1-sol": {"effort": "low"}}
-# Opt-in override for follow-up studies (2026-10-08, inherited-sessions reasoning arm): HARNESS_FRONTIER_EFFORT=high runs the
-# three frontier models at that effort instead of the lightest; HARNESS_THINKING_HEADROOM raises the output headroom for
-# thinking to match. Both are recorded in every transcript through run_config(); the benchmark never sets them.
-if os.environ.get("HARNESS_FRONTIER_EFFORT"):
-    for _m in ("claude-opus-5-5", "claude-fable-5-1"):
-        MODEL_EXTRAS[_m] = {"output_config": {"effort": os.environ["HARNESS_FRONTIER_EFFORT"]}}
-    RESPONSES_REASONING["gpt-6-astra"] = {"effort": os.environ["HARNESS_FRONTIER_EFFORT"]}
+# Removed 2026-10-20: HARNESS_FRONTIER_EFFORT=<effort> (opt-in, 2026-10-08, the inherited-sessions reasoning arm) ran
+# Claude Opus 5.5, Claude Fable 5.1 and GPT-6 Astra at that effort under their own names. A run made with it records the
+# settings it sent in its harness_config (model_extras, responses_reasoning). A reasoning-effort run is now its own
+# model name, <model>@<effort> (EFFORTS below), with its own run folder and registry row. HARNESS_THINKING_HEADROOM
+# (above) still raises the output headroom for thinking.
 # A new OpenAI model at the lightest reasoning setting its API offers (2026-10-14): HARNESS_OPENAI_EFFORT='{"gpt-6-luna":
 # "none"}' sends that reasoning_effort on chat completions and the same effort on the Responses API (used when the model
 # rejects function tools with reasoning on chat completions). Without an entry a model runs at its API default, which for
@@ -92,6 +101,56 @@ for _m, _e in OPENAI_EFFORT.items():
 # Prices for models the PRICES table does not list (USD per 1M tokens, input and output), e.g.
 # HARNESS_PRICES='{"gpt-5.5": [5, 30]}'; unlisted models count at (5, 25) in the usage log and the budget guard.
 PRICES.update({m: (float(p[0]), float(p[1])) for m, p in json.loads(os.environ.get("HARNESS_PRICES", "") or "{}").items()})
+# Reasoning-effort variants (2026-10-20, for the reasoning-effort study): "<model>@<effort>", e.g. gpt-6-astra@high,
+# claude-opus-5-5@high or openrouter:google/gemini-4-argon@high, runs <model> at that reasoning effort on its usual route.
+# The leaderboard runs every model unsuffixed, at the lightest setting its API offers (above); nothing here changes an
+# unsuffixed name's requests, records or log lines. A variant is a model name of its own downstream: its runs go to
+# runs/<model>@<effort>/ (model_slug keeps the suffix), it is priced as its base model, and run_config() (`effort_variants`)
+# and every usage-log line (`effort`) record the effort with the request settings it resolved to (effort_request). What
+# the suffix sends, per route, in place of the base model's own reasoning setting:
+#   anthropic      output_config.effort (low, medium, high, xhigh, max; "none"/"minimal" do not exist there). A base
+#                  setting that turns thinking off (Sonnet 5.5's between_tools, which the API also rejects above high;
+#                  Haiku 5.5's disabled) is dropped, so the model thinks adaptively at that effort; a model that does not
+#                  think by default (not _THINKS_BY_DEFAULT_PREFIXES) gets thinking {"type": "adaptive"} explicitly
+#   openai         reasoning_effort on chat completions, reasoning.effort on the Responses API
+#   openrouter:    reasoning: {"effort": <effort>} instead of the lightest setting the preset picks
+#   gemini-*, other HARNESS_OPENAI_COMPAT entries   reasoning_effort (the entry's own reasoning fields are replaced);
+#                  an entry named with the suffix itself is used as written
+#   together, azure   reasoning_effort with reasoning enabled ({"reasoning": {"enabled": true}}); "none" sends reasoning
+#                  off both ways the leaderboard's Together models needed ({"reasoning": {"enabled": false}} and the chat
+#                  template's enable_thinking false) instead
+#   vllm           thinking on in the chat template (off for "none"): Qwen3 has no effort levels
+# Headroom: thinking counts toward the output limit on every route, so a variant's limit is the visible budget plus
+# EFFORT_HEADROOM[effort] (the light efforts keep THINKING_HEADROOM), and its calls at medium and above wait up to
+# EFFORT_TIMEOUT_S (a high-effort turn can think for minutes; the clients' own timeouts are 180-600 s).
+EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+EFFORT_HEADROOM: dict[str, int] = {"none": THINKING_HEADROOM, "minimal": THINKING_HEADROOM, "low": THINKING_HEADROOM,
+                                   "medium": 8000, "high": 16000, "xhigh": 32000, "max": 32000}
+EFFORT_HEADROOM.update(json.loads(os.environ.get("HARNESS_EFFORT_HEADROOM", "") or "{}"))
+EFFORT_TIMEOUT_S = 900.0
+_ANTHROPIC_EFFORTS = ("low", "medium", "high", "xhigh", "max")
+_THINKING_OFF = ("disabled", "between_tools")
+
+
+def split_effort(model: str) -> tuple[str, str | None]:
+    """(base model, effort) of a model name: ("gpt-6-astra", "high") for "gpt-6-astra@high", (model, None) without a
+    suffix. ValueError for an effort not in EFFORTS."""
+    if "@" not in model:
+        return model, None
+    base, effort = model.rsplit("@", 1)
+    if not base or effort not in EFFORTS:
+        raise ValueError(f"{model!r}: the reasoning-effort suffix must be one of {', '.join('@' + e for e in EFFORTS)}")
+    return base, effort
+
+
+def _effort(model: str) -> str | None:
+    """The effort of a variant name, None for an unsuffixed (or malformed) one."""
+    try:
+        return split_effort(model)[1]
+    except ValueError:
+        return None
+
+
 VLLM_ENDPOINTS: dict[str, str] = json.loads(os.environ.get("HARNESS_VLLM_ENDPOINTS", "") or json.dumps({
     "Qwen/Qwen3-32B": "http://localhost:8000/v1", "Qwen/Qwen3-14B": "http://localhost:8001/v1",
     "Qwen/Qwen3-8B": "http://localhost:8002/v1"}))
@@ -118,8 +177,58 @@ OPENAI_COMPAT: dict[str, dict[str, Any]] = json.loads(os.environ.get("HARNESS_OP
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/"
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 _COMPAT_PRESET_PREFIXES = ("gemini-", "openrouter:")
+# The Inspect port (2026-10-20, src/collab_intel/inspect_eval/): "inspect/<Inspect model name>" is the model an Inspect eval
+# evaluates and "inspect-role/<role>" an Inspect model role; inspect_eval/bridge.py makes the request through Inspect's
+# model API from the episode's worker thread, with the output budget, price and reasoning setting the harness's own route
+# for the same model uses. A dry run keeps these calls (the tests run them against Inspect's mockllm) and logs nothing.
+INSPECT_PREFIXES = ("inspect/", "inspect-role/")
 _compat_resolved: dict[str, dict[str, Any]] = {}
 _openrouter_models: dict[str, dict[str, Any]] = {}
+# OpenRouter data policy (standing project rule, 2026-10-20: never enable third-party data sharing). Every request that
+# goes to OpenRouter (an openrouter: name, or any HARNESS_OPENAI_COMPAT entry with OpenRouter's URL, e.g. the hosted
+# Qwen3-14B partner) carries OpenRouter's provider-routing fields (openrouter.ai/docs/guides/routing/provider-selection
+# and /docs/guides/features/zdr, read 2026-10-20): `data_collection: "deny"` (only providers that do not store user
+# data or train on it) and `zdr: true` (only endpoints with a Zero Data Retention policy; probed 2026-10-20, "deny" alone
+# still routed to hosts that retain prompts: Google AI Studio, xAI's and Mistral's standard endpoints, Alibaba), plus
+# `require_parameters: true` (skip hosts that would drop a field the request sends: tools, the reasoning setting). An
+# entry's own `provider` fields (order, only, quantizations, ...) are kept; these three always win. With no compliant
+# endpoint OpenRouter answers HTTP 404 "No endpoints found matching your data policy": the call fails with
+# OpenRouterPolicyError (never retried), and missing_setup() names such a model before a run starts, from OpenRouter's
+# list of zero-retention endpoints (GET /api/v1/endpoints/zdr). Recorded in run_config() (`openrouter_provider_policy`,
+# and in each entry's `extra`) and on every usage-log line (extra_body), with the host that served the call and the
+# cost OpenRouter billed (`openrouter`), which is then the call's cost_usd.
+OPENROUTER_PROVIDER_POLICY: dict[str, Any] = {"data_collection": "deny", "zdr": True, "require_parameters": True}
+_openrouter_zdr: dict[str, Any] = {}
+
+
+class OpenRouterPolicyError(RuntimeError):
+    """No OpenRouter endpoint serves the model under OPENROUTER_PROVIDER_POLICY (or with every field the request sends)."""
+
+
+def _with_openrouter_policy(cfg: dict[str, Any]) -> dict[str, Any]:
+    """cfg with OPENROUTER_PROVIDER_POLICY in its request extras when it goes to OpenRouter (unchanged otherwise)."""
+    if not _is_openrouter(cfg):
+        return cfg
+    extra = dict(cfg.get("extra") or {})
+    extra["provider"] = {**(extra.get("provider") or {}), **OPENROUTER_PROVIDER_POLICY}
+    return {**cfg, "extra": extra}
+
+
+def _openrouter_zdr_models() -> set[str] | None:
+    """Model ids with at least one zero-data-retention endpoint on OpenRouter (GET /api/v1/endpoints/zdr, fetched once
+    per process), or None when the list cannot be fetched (the call itself then enforces the policy)."""
+    if "ids" not in _openrouter_zdr:
+        ids = None
+        try:
+            import requests
+            key = os.environ.get("OPENROUTER_API_KEY")
+            r = requests.get(f"{OPENROUTER_BASE}/endpoints/zdr", timeout=60,
+                             headers={"Authorization": f"Bearer {key}"} if key else {})
+            ids = {e["model_id"] for e in r.json()["data"]}
+        except Exception:  # noqa: BLE001
+            pass
+        _openrouter_zdr["ids"] = ids
+    return _openrouter_zdr["ids"]
 
 
 def _openrouter_lightest(model_id: str) -> dict[str, Any]:
@@ -153,6 +262,12 @@ def _openrouter_lightest(model_id: str) -> dict[str, Any]:
     return out
 
 
+def _is_openrouter(cfg: dict[str, Any]) -> bool:
+    """A hosted OpenAI-compatible entry that goes to OpenRouter: an openrouter: name (whatever its base URL, e.g. a test's
+    stand-in server) or any entry with OpenRouter's URL."""
+    return bool(cfg.get("openrouter")) or "//openrouter.ai/" in str(cfg.get("base_url") or "")
+
+
 def _compat_preset(model: str) -> dict[str, Any]:
     """The built-in settings of a gemini-* or openrouter:<model id> name ({} for any other)."""
     if model.startswith("gemini-"):
@@ -164,15 +279,27 @@ def _compat_preset(model: str) -> dict[str, Any]:
                 "extra": {"reasoning_effort": "none" if model.startswith("gemini-2.5-flash") else "minimal"}}
     if model.startswith("openrouter:"):
         mid = model.removeprefix("openrouter:")
-        return {"base_url": OPENROUTER_BASE, "api_key_env": "OPENROUTER_API_KEY", "model": mid, **_openrouter_lightest(mid)}
+        return {"base_url": OPENROUTER_BASE, "api_key_env": "OPENROUTER_API_KEY", "model": mid, "openrouter": True,
+                **_openrouter_lightest(mid)}
     return {}
 
 
 def openai_compat_config(model: str) -> dict[str, Any]:
     """The resolved settings of a model on the hosted OpenAI-compatible route: its preset, then its HARNESS_OPENAI_COMPAT
-    entry key by key (cached; a dry run never fetches OpenRouter's model list)."""
+    entry key by key, then OpenRouter's data policy for an entry that goes there (OPENROUTER_PROVIDER_POLICY; cached; a
+    dry run never fetches OpenRouter's model list)."""
     if model in _compat_resolved:
         return _compat_resolved[model]
+    base, effort = split_effort(model) if model not in OPENAI_COMPAT else (model, None)
+    if effort is not None:
+        # a reasoning-effort variant (EFFORTS above): the base model's settings with its reasoning fields replaced
+        cfg = dict(openai_compat_config(base))
+        extra = {k: v for k, v in (cfg.get("extra") or {}).items() if k not in ("reasoning", "reasoning_effort", "chat_template_kwargs")}
+        extra.update({"reasoning": {"effort": effort}} if _is_openrouter(cfg) else {"reasoning_effort": effort})
+        cfg.update(extra=extra, effort=effort)
+        if not dry_run():
+            _compat_resolved[model] = cfg
+        return cfg
     entry = OPENAI_COMPAT.get(model) or {}
     if not isinstance(entry, dict):
         raise ValueError(f"HARNESS_OPENAI_COMPAT[{model!r}] must be an object with base_url, api_key_env, ...")
@@ -180,6 +307,9 @@ def openai_compat_config(model: str) -> dict[str, Any]:
     cfg.setdefault("model", model)
     if not cfg.get("base_url"):
         raise ValueError(f"HARNESS_OPENAI_COMPAT[{model!r}] has no base_url")
+    if model.startswith("openrouter:"):
+        cfg["openrouter"] = True  # an entry cannot take an openrouter: name out of the data policy
+    cfg = _with_openrouter_policy(cfg)
     if not dry_run():
         _compat_resolved[model] = cfg
     return cfg
@@ -309,11 +439,13 @@ _clients: dict[str, Any] = {}
 
 def run_config(models: list[str] | None = None) -> dict[str, Any]:
     """Settings that affect model behaviour, recorded in every transcript for reproducibility. `models` (the run's
-    models): those on the hosted OpenAI-compatible route add their resolved settings (`openai_compat`); the key is left
-    out when none is, so the record of every other run is unchanged."""
+    models): those on the hosted OpenAI-compatible route add their resolved settings (`openai_compat`) and reasoning-effort
+    variants their effort and request settings (`effort_variants`); each key is left out when no model needs it, so the
+    record of every other run is unchanged."""
     from collab_intel.harness import judges
     run_models = [*(models or []), judges.JUDGE_MODEL, judges.SECOND_RATER, judges.TIEBREAK_RATER]
     compat = {m: openai_compat_config(m) for m in dict.fromkeys(run_models) if m and _is_compat(m)}
+    variants = {m: effort_record(m) for m in dict.fromkeys(run_models) if m and _effort(m)}
     return {"model_extras": MODEL_EXTRAS, "thinking_headroom": THINKING_HEADROOM,
             "vllm_thinking": VLLM_THINKING_DEFAULT, "vllm_endpoints": VLLM_ENDPOINTS,
             "judge_model": judges.JUDGE_MODEL, "second_rater": judges.SECOND_RATER, "model_routes": MODEL_ROUTES,
@@ -322,6 +454,9 @@ def run_config(models: list[str] | None = None) -> dict[str, Any]:
             "route_extra_body": ROUTE_EXTRA_BODY, "responses_reasoning": RESPONSES_REASONING, "thinks_by_default_prefixes": list(_THINKS_BY_DEFAULT_PREFIXES),
             "empty_retry_tokens": EMPTY_RETRY_TOKENS, "judge_max_tokens": judges.JUDGE_MAX_TOKENS,
             **({"openai_compat": compat} if compat else {}), **({"openai_effort": OPENAI_EFFORT} if OPENAI_EFFORT else {}),
+            **({"openrouter_provider_policy": OPENROUTER_PROVIDER_POLICY} if any(_is_openrouter(c) for c in compat.values()) else {}),
+            # reasoning-effort variants among the run's models (EFFORTS): left out when there is none
+            **({"effort_variants": variants} if variants else {}),
             # a dry run (HARNESS_DRY_RUN: canned replies, no model call) is marked so that it is never scored or resumed
             # as a real run (release audit USE-01 / DS-10, 2026-10-13); real runs carry no such key
             **({"dry_run": True} if dry_run() else {})}
@@ -343,8 +478,11 @@ def accepts_temperature(model: str) -> bool:
     (gpt-5*, o*), which reject a non-default temperature; yes for the rest (older Claude, Together, vLLM, Azure)."""
     try:
         provider = provider_of(model)
+        base, effort = split_effort(model)
     except ValueError:
         return False
+    if effort is not None:  # a variant: as its base model, and never with an Anthropic effort setting
+        return provider != "anthropic" and accepts_temperature(base)
     if provider == "anthropic":
         return not model.startswith(_NO_SAMPLING_PREFIXES) and "output_config" not in MODEL_EXTRAS.get(model, {})
     if provider == "openai":
@@ -357,8 +495,13 @@ class BudgetExceeded(RuntimeError):
 
 
 def provider_of(model: str) -> str:
+    if model.startswith(INSPECT_PREFIXES):
+        return "inspect"
     if model in OPENAI_COMPAT:  # an explicit entry wins over every other route
         return "openai_compat"
+    base, effort = split_effort(model)
+    if effort is not None:  # a reasoning-effort variant goes where its base model goes
+        return provider_of(base)
     if model in MODEL_ROUTES:
         return MODEL_ROUTES[model][0]
     if model.startswith("claude-"):
@@ -390,12 +533,20 @@ _ROUTE_KEYS = {"anthropic": ("ANTHROPIC_API_KEY",), "openai": ("OPENAI_API_KEY",
 
 
 def missing_setup(model: str) -> str | None:
-    """Why `model` cannot be called as configured (no route, a key not set), or None. For a run's up-front check."""
+    """Why `model` cannot be called as configured (no route, a key not set, an Anthropic effort that does not exist, an
+    OpenRouter model no zero-retention endpoint serves), or None. For a run's up-front check."""
     try:
         provider = provider_of(model)
         keys = (openai_compat_config(model).get("api_key_env"),) if provider == "openai_compat" else _ROUTE_KEYS[provider]
     except ValueError as e:
         return str(e)
+    if provider == "anthropic" and _effort(model) and _effort(model) not in _ANTHROPIC_EFFORTS:
+        return f"{model}: Anthropic models take effort {', '.join(_ANTHROPIC_EFFORTS)} (no {_effort(model)!r})"
+    if provider == "openai_compat" and not dry_run() and _is_openrouter(cfg := openai_compat_config(model)):
+        zdr = _openrouter_zdr_models()
+        if zdr is not None and cfg["model"].split(":")[0] not in zdr:
+            return (f"{model}: no OpenRouter endpoint with zero data retention serves {cfg['model']}, so it cannot be "
+                    "run under the project's data policy (OPENROUTER_PROVIDER_POLICY in llm.py)")
     unset = [k for k in keys if k and not os.environ.get(k)]
     return f"{model}: {', '.join(unset)} not set (add it to .env)" if unset else None
 
@@ -405,7 +556,7 @@ def model_slug(model: str) -> str:
 
 
 def _client(provider: str, model: str = ""):
-    key = provider if provider != "vllm" else f"vllm:{VLLM_ENDPOINTS[model]}"
+    key = provider if provider != "vllm" else f"vllm:{VLLM_ENDPOINTS[split_effort(model)[0]]}"
     if provider == "openai_compat":
         cfg = openai_compat_config(model)
         key = f"openai_compat:{cfg['base_url']}|{cfg.get('api_key_env')}"
@@ -446,16 +597,17 @@ def _client(provider: str, model: str = ""):
                                           max_retries=4, timeout=300.0)
         else:
             import openai
-            _clients[key] = openai.OpenAI(base_url=VLLM_ENDPOINTS[model], api_key=os.environ.get("HARNESS_VLLM_API_KEY") or "EMPTY",
+            _clients[key] = openai.OpenAI(base_url=VLLM_ENDPOINTS[split_effort(model)[0]], api_key=os.environ.get("HARNESS_VLLM_API_KEY") or "EMPTY",
                                           max_retries=3, timeout=600.0)
     return _clients[key]
 
 
 def api_model_id(model: str) -> str:
-    """The id sent to the provider (a routed name maps to the provider's id; a "together:" prefix is dropped; a hosted
-    OpenAI-compatible model sends its entry's "model")."""
+    """The id sent to the provider (a routed name maps to the provider's id; a "together:" prefix and an @<effort> suffix
+    are dropped; a hosted OpenAI-compatible model sends its entry's "model")."""
     if _is_compat(model):
         return openai_compat_config(model)["model"]
+    model = split_effort(model)[0]  # a reasoning-effort variant calls its base model
     return MODEL_ROUTES[model][1] if model in MODEL_ROUTES else model.removeprefix("together:")
 
 
@@ -479,7 +631,8 @@ def cost_usd(model: str, usage: dict[str, int]) -> float:
     if provider_of(model) == "openai_compat" and openai_compat_config(model).get("price") is not None:
         pin, pout = (float(x) for x in openai_compat_config(model)["price"])
     else:
-        pin, pout = _together_price(model) if provider_of(model) == "together" else PRICES.get(model, (5.0, 25.0))
+        pin, pout = _together_price(model) if provider_of(model) == "together" else \
+            PRICES.get(model) or PRICES.get(split_effort(model)[0], (5.0, 25.0))  # a variant: its base model's price
     inp = usage.get("input_tokens", 0)
     cr = usage.get("cache_read_input_tokens", 0) or 0
     cw = usage.get("cache_creation_input_tokens", 0) or 0
@@ -521,6 +674,8 @@ def total_spent() -> float:
 
 
 def _log(entry: dict[str, Any]) -> None:
+    if dry_run():  # a dry run logs nothing (its Inspect calls go to mockllm)
+        return
     USAGE_LOG.parent.mkdir(parents=True, exist_ok=True)
     with _LOCK, USAGE_LOG.open("a") as f:
         f.write(json.dumps(entry) + "\n")
@@ -573,6 +728,26 @@ def _to_openai(system: str, messages: list[dict[str, Any]], echo: bool = False) 
 _IN_EMPTY_RETRY: contextvars.ContextVar[bool] = contextvars.ContextVar("_IN_EMPTY_RETRY", default=False)
 
 
+class ProviderBodyError(RuntimeError):
+    """An HTTP 200 chat completion with no choices, only an error object (OpenRouter passes some upstream failures on so;
+    2026-10-20 smoke runs: Gemini 3.8 Flash, two of 24 runs ended on "'NoneType' object is not subscriptable"). It carries
+    the error's code as status_code, so _with_backoff waits out a 429 or 5xx like any other, and anything else fails with
+    the provider's message."""
+
+    def __init__(self, error: Any):
+        err = error if isinstance(error, dict) else {"message": str(error)}
+        code = err.get("code")
+        self.status_code = code if isinstance(code, int) else 502  # no code: an upstream failure, retried
+        super().__init__(f"provider error in a 200 response ({self.status_code}): {str(err.get('message'))[:300]}")
+
+
+def _choices_or_raise(resp: Any) -> Any:
+    """The chat completion, or ProviderBodyError when it has no choices."""
+    if getattr(resp, "choices", None):
+        return resp
+    raise ProviderBodyError((getattr(resp, "model_extra", None) or {}).get("error") or "no choices in the response")
+
+
 def _with_backoff(fn: Any, tries: int = 9) -> Any:
     """Retry provider rate limits (429) and overloads (503/529) with long exponential backoff (about 10 minutes in
     total). The client's own retries are short; Together's limits are dynamic and shift with capacity, and with the
@@ -618,8 +793,9 @@ def _responses_call(client: Any, model: str, system: str, messages: list[dict[st
     if tools:
         kwargs["tools"] = [{"type": "function", "name": t["name"], "description": t.get("description", ""),
                             "parameters": t["input_schema"]} for t in tools]
-    if model in RESPONSES_REASONING:
-        kwargs["reasoning"] = RESPONSES_REASONING[model]
+    reasoning = {"effort": _effort(model)} if _effort(model) else RESPONSES_REASONING.get(model)
+    if reasoning:
+        kwargs["reasoning"] = reasoning
     resp = _with_backoff(lambda: client.responses.create(**kwargs))
     tool_calls: list[dict[str, Any]] = []
     for it in resp.output or []:
@@ -682,20 +858,80 @@ def _dry_run_reply(messages: list[dict], tools: list[dict] | None) -> dict[str, 
             "model": "dry-run", "reasoning": ""}
 
 
+def _anthropic_extras(model: str) -> dict[str, Any]:
+    """The request settings of an Anthropic model: MODEL_EXTRAS for an unsuffixed name; for a reasoning-effort variant,
+    its base model's with output_config.effort set, a thinking-off setting dropped and adaptive thinking asked for where
+    the model does not think by default (EFFORTS above)."""
+    base, effort = split_effort(model)
+    if effort is None:
+        return MODEL_EXTRAS.get(model, {})
+    own = MODEL_EXTRAS.get(base, {})
+    extras = {k: v for k, v in own.items() if k not in ("thinking", "output_config")}
+    if own.get("thinking") and own["thinking"].get("type") not in _THINKING_OFF:
+        extras["thinking"] = own["thinking"]
+    elif not base.startswith(_THINKS_BY_DEFAULT_PREFIXES):
+        extras["thinking"] = {"type": "adaptive"}
+    extras["output_config"] = {**own.get("output_config", {}), "effort": effort}
+    return extras
+
+
+def _route_effort_body(effort: str) -> dict[str, Any]:
+    """Together / Azure request fields of a reasoning-effort variant (EFFORTS above)."""
+    if effort == "none":
+        return {"reasoning": {"enabled": False}, "chat_template_kwargs": {"enable_thinking": False}}
+    return {"reasoning": {"enabled": True}, "reasoning_effort": effort}
+
+
+def _vllm_thinking(model: str, thinking: bool) -> bool:
+    """Qwen3's chat-template thinking switch on the vLLM route: HARNESS_VLLM_THINKING, or for a variant its effort (on
+    unless "none"); a call made with thinking=False (status notes, retries) is never thinking."""
+    effort = _effort(model)
+    return bool(thinking) and (effort != "none" if effort is not None else VLLM_THINKING_DEFAULT)
+
+
+def effort_request(model: str) -> dict[str, Any]:
+    """What a reasoning-effort variant sends in place of its base model's reasoning setting, per route (EFFORTS above)."""
+    effort = split_effort(model)[1]
+    provider = provider_of(model)
+    if provider == "anthropic":
+        return _anthropic_extras(model)
+    if provider == "openai":
+        return {"chat_completions": {"reasoning_effort": effort}, "responses": {"reasoning": {"effort": effort}}}
+    if provider == "openai_compat":
+        return {"extra_body": openai_compat_config(model).get("extra") or {}}
+    if provider == "vllm":
+        return {"chat_template_kwargs": {"enable_thinking": effort != "none"}}
+    return {"extra_body": _route_effort_body(effort)}
+
+
+def effort_record(model: str) -> dict[str, Any]:
+    """run_config()'s entry for a reasoning-effort variant: base model, effort, request settings, headroom, timeout."""
+    base, effort = split_effort(model)
+    return {"base_model": base, "effort": effort, "request": effort_request(model),
+            "headroom": VLLM_THINKING_HEADROOM if provider_of(model) == "vllm" else EFFORT_HEADROOM[effort],
+            **({"timeout_s": EFFORT_TIMEOUT_S} if effort in ("medium", "high", "xhigh", "max") else {})}
+
+
 def _anthropic_headroom(model: str) -> int:
     """Thinking headroom added to max_tokens for Anthropic models that think by default (their thinking tokens count
-    toward max_tokens) or that run with an effort extra."""
+    toward max_tokens) or that run with an effort extra; a reasoning-effort variant's is EFFORT_HEADROOM[effort]."""
+    if _effort(model):
+        return EFFORT_HEADROOM[_effort(model)]
     return THINKING_HEADROOM if (model.startswith(_THINKS_BY_DEFAULT_PREFIXES) or "output_config" in MODEL_EXTRAS.get(model, {})) else 0
 
 
 def output_budget(model: str, max_tokens: int, thinking: bool = True) -> int:
     """The output-token limit actually sent to the provider for a visible budget of `max_tokens`."""
     provider = provider_of(model)
+    if provider == "inspect":  # as the harness's own route for the same model (inspect_eval/bridge.py)
+        from collab_intel.inspect_eval.bridge import harness_equivalent
+        same = harness_equivalent(model)
+        return output_budget(same, max_tokens, thinking) if same else max_tokens + THINKING_HEADROOM
     if provider == "anthropic":
         return max_tokens + _anthropic_headroom(model)
     if provider == "vllm":
-        return max_tokens + (VLLM_THINKING_HEADROOM if (bool(thinking) and VLLM_THINKING_DEFAULT) else 0)
-    return max_tokens + THINKING_HEADROOM
+        return max_tokens + (VLLM_THINKING_HEADROOM if _vllm_thinking(model, thinking) else 0)
+    return max_tokens + (EFFORT_HEADROOM[_effort(model)] if _effort(model) else THINKING_HEADROOM)
 
 
 def empty_retry_budget(first_budget: int) -> int:
@@ -712,9 +948,18 @@ def _call_once(model: str, provider: str, system: str, messages: list[dict[str, 
     """One provider request with output-token limit `budget`. Returns (result, extra usage-log fields)."""
     extra_log: dict[str, Any] = {}
     refusal = None
+    if provider == "inspect":
+        from collab_intel.inspect_eval.bridge import inspect_call
+        return inspect_call(model, system, messages, tools, budget, temperature, timeout, thinking)
+    base, effort = split_effort(model)
+    if effort is not None:
+        extra_log["effort"] = effort  # a reasoning-effort variant: every log line says so (unsuffixed lines are unchanged)
+        if effort in ("medium", "high", "xhigh", "max"):
+            timeout = max(timeout or 0.0, EFFORT_TIMEOUT_S)
     if provider == "anthropic":
-        extras = MODEL_EXTRAS.get(model, {})
-        kwargs: dict[str, Any] = {"model": model, "max_tokens": budget, "system": system, "messages": _to_anthropic(messages)}
+        extras = _anthropic_extras(model)
+        kwargs: dict[str, Any] = {"model": api_model_id(model), "max_tokens": budget, "system": system,
+                                  "messages": _to_anthropic(messages)}
         kwargs.update(extras)
         if tools:
             kwargs["tools"] = tools
@@ -752,15 +997,16 @@ def _call_once(model: str, provider: str, system: str, messages: list[dict[str, 
         if tools:
             kwargs["tools"] = _tools_openai(tools)
         if provider == "vllm":
-            think = bool(thinking) and VLLM_THINKING_DEFAULT
+            think = _vllm_thinking(model, thinking)
             kwargs["max_tokens"] = budget
             kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": think}}
         elif provider in ("azure", "together"):
             kwargs["max_tokens"] = budget
-            if model in ROUTE_EXTRA_BODY:
-                kwargs["extra_body"] = ROUTE_EXTRA_BODY[model]
-                extra_log["extra_body"] = ROUTE_EXTRA_BODY[model]
-            if model in _NULL_CONTENT_REJECTED:
+            body = _route_effort_body(effort) if effort is not None else ROUTE_EXTRA_BODY.get(model)
+            if body is not None:
+                kwargs["extra_body"] = body
+                extra_log["extra_body"] = body
+            if base in _NULL_CONTENT_REJECTED:
                 for msg in kwargs["messages"]:
                     if msg["role"] == "assistant" and msg.get("content") is None:
                         msg["content"] = ""
@@ -772,23 +1018,39 @@ def _call_once(model: str, provider: str, system: str, messages: list[dict[str, 
                 extra_log["extra_body"] = cfg["extra"]
         else:
             kwargs["max_completion_tokens"] = budget
-            if model in OPENAI_EFFORT:
-                kwargs["reasoning_effort"] = OPENAI_EFFORT[model]
-                extra_log["reasoning_effort"] = OPENAI_EFFORT[model]
+            oe = effort or OPENAI_EFFORT.get(model)
+            if oe:
+                kwargs["reasoning_effort"] = oe
+                extra_log["reasoning_effort"] = oe
         if temperature is not None:
             kwargs["temperature"] = temperature
         resp = None
         try:
             if model not in _RESPONSES_ONLY:
-                resp = _with_backoff(lambda: _stream_chat(client, kwargs) if model in _STREAM_ONLY
-                                     else client.chat.completions.create(**kwargs))
+                resp = _with_backoff(lambda: _choices_or_raise(_stream_chat(client, kwargs) if model in _STREAM_ONLY
+                                                               else client.chat.completions.create(**kwargs)))
         except Exception as e:
             if provider == "openai" and "/v1/responses" in str(e):
                 _RESPONSES_ONLY.add(model)
+            elif provider == "openai_compat" and getattr(e, "status_code", None) == 404 and "No endpoints found" in str(e):
+                # OpenRouter: no endpoint serves the model under the data policy, or with every field this request sends
+                # (require_parameters); the same request would fail again, and the policy is never relaxed
+                raise OpenRouterPolicyError(f"{model}: OpenRouter has no endpoint for {api_model_id(model)} that meets the "
+                                            f"project's data policy {OPENROUTER_PROVIDER_POLICY} and supports every field "
+                                            f"of this request (tools, reasoning): {str(e)[:300]}") from e
             elif "streaming_required" in str(e):
                 # some Together deployments (e.g. Qwen3.7-Plus) only answer streamed requests: same request, streamed
                 _STREAM_ONLY.add(model)
                 resp = _stream_chat(client, kwargs)
+            elif isinstance(e, ProviderBodyError) and e.status_code == 403 and "blocked" in str(e).lower():
+                # the provider's safety layer declined the prompt (2026-10-20, v4 runs: Gemini through OpenRouter
+                # answers HTTP 200 with {"error": {"code": 403, "message": "Gemini blocked the request: SAFETY"}} on one
+                # resisting scenario): recorded as a provider refusal, as Anthropic's stop_reason "refusal" is, so
+                # scripts/score.py leaves the scenario out for the model and lists it, not a crash that loses the run
+                refusal = {"category": "provider_block", "message": str(e)[-200:]}
+                return ({"text": "", "tool_calls": [], "stop_reason": "refusal", "refusal": refusal,
+                         "usage": {"input_tokens": 0, "output_tokens": 0}, "cost_usd": 0.0, "model": model, "reasoning": ""},
+                        {"refusal": refusal})
             # Azure's content filter returns HTTP 400 with finish_reason "content_filter"; record an empty turn
             # (flagged in the transcript and usage log) instead of losing the whole run
             elif provider == "azure" and "content_filter" in str(e):
@@ -822,7 +1084,7 @@ def _call_once(model: str, provider: str, system: str, messages: list[dict[str, 
                 tool_calls.append({"id": tc.id, "name": tc.function.name, "input": args})
             if provider == "openai_compat":
                 _compat_echo(m, tool_calls)
-            if model in _HARMONY_LEAK and not tool_calls and (fixed := _repair_harmony(text)) is not None:
+            if base in _HARMONY_LEAK and not tool_calls and (fixed := _repair_harmony(text)) is not None:
                 text, leaked, tool_calls = fixed
                 reasoning = "\n\n".join(x for x in (reasoning, leaked) if x)
                 extra_log["harmony_repaired"] = {"tool_calls": len(tool_calls), "text": bool(text)}
@@ -833,8 +1095,15 @@ def _call_once(model: str, provider: str, system: str, messages: list[dict[str, 
                 # some providers leave thinking tokens out of completion_tokens but count them in total_tokens (and bill
                 # them as output): the larger of the two is logged as output
                 usage["output_tokens"] = max(usage["output_tokens"], (getattr(u, "total_tokens", 0) or 0) - usage["input_tokens"])
+                if _is_openrouter(openai_compat_config(model)):
+                    # the host that served the call (a display name) and what OpenRouter billed for it (OPENROUTER_PROVIDER_POLICY)
+                    billed = getattr(u, "cost", None)
+                    extra_log["openrouter"] = {"provider": getattr(resp, "provider", None),
+                                               "billed_usd": billed if isinstance(billed, (int, float)) else None}
             req_id = getattr(resp, "id", None)
     c = cost_usd(model, usage)
+    if isinstance((extra_log.get("openrouter") or {}).get("billed_usd"), (int, float)):
+        c = float(extra_log["openrouter"]["billed_usd"])
     out = {"text": text, "tool_calls": tool_calls, "stop_reason": stop, "usage": usage, "cost_usd": c, "model": model,
            "reasoning": reasoning}
     if refusal is not None:
@@ -863,14 +1132,14 @@ def call_model(model: str, system: str, messages: list[dict[str, Any]], tools: l
     ({"empty_retry": {...}} and/or {"refusal": {...}}), which the episode records in the transcript."""
     if temperature is not None and not accepts_temperature(model):
         temperature = None
-    if os.environ.get("HARNESS_DRY_RUN"):
+    if os.environ.get("HARNESS_DRY_RUN") and not model.startswith(INSPECT_PREFIXES):
         # canned reply, no provider and no cost: nothing goes to the usage log (USE-01, 2026-10-13: dry runs, the test
         # suite's included, filled the project's log with zero-cost lines)
         return _dry_run_reply(messages, tools)
     provider = provider_of(model)
-    if provider not in ("vllm", "azure") and total_spent() > BUDGET_USD:
+    if provider not in ("vllm", "azure") and not dry_run() and total_spent() > BUDGET_USD:
         raise BudgetExceeded(f"estimated spend {total_spent():.2f} USD exceeds HARNESS_BUDGET_USD={BUDGET_USD}")
-    vllm_think = (bool(thinking) and VLLM_THINKING_DEFAULT) if provider == "vllm" else None
+    vllm_think = _vllm_thinking(model, thinking) if provider == "vllm" else None
     budget = output_budget(model, max_tokens, thinking)
     t0 = time.time()
     out, extra = _call_once(model, provider, system, messages, tools, budget, thinking, temperature)

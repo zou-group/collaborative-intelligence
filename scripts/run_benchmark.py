@@ -218,10 +218,10 @@ def main() -> None:
     needed = dict.fromkeys(models + PARTNERS.split(",") + [args.gate_model or "", judges.JUDGE_MODEL, judges.SECOND_RATER])
     if problems := [p for m in needed if m and (p := missing_setup(m))]:
         ap.error("; ".join(problems))
-    from collab_intel.harness.llm import OPENAI_EFFORT, RESPONSES_REASONING, provider_of
+    from collab_intel.harness.llm import OPENAI_EFFORT, RESPONSES_REASONING, provider_of, split_effort
 
     for m in models:  # the leaderboard runs every model at the lightest reasoning its API offers
-        if provider_of(m) == "openai" and m not in OPENAI_EFFORT and m not in RESPONSES_REASONING:
+        if provider_of(m) == "openai" and m not in OPENAI_EFFORT and m not in RESPONSES_REASONING and not split_effort(m)[1]:
             print(f"note: {m} has no reasoning setting, so it runs at the API's default; for scores comparable with the "
                   f"leaderboard set its lightest effort, e.g. HARNESS_OPENAI_EFFORT='{{\"{m}\": \"none\"}}' "
                   "(docs/running.md, \"Testing a new model\")", file=sys.stderr)

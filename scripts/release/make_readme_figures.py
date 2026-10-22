@@ -29,7 +29,7 @@ THEMES = {
              "open": "#6e7681", "problem": "#f07860", "problem_soft": "#6b3a32", "start": "#3fb950",
              "lo": (13, 17, 23), "hi": (79, 111, 240), "empty": "#161b22", "bg": "#0d1117"},
 }
-NAME_W, PLOT_W, ROW = 200, 520, 30
+NAME_W, PLOT_W, ROW = 262, 520, 30  # NAME_W fits "Claude Sonnet 5.5 (high effort)"
 
 
 def svg(w: int, h: int, body: list[str], title: str) -> str:
@@ -53,8 +53,7 @@ def axis(c: dict, x0: float, top: float, bottom: float) -> list[str]:
 
 
 def results() -> list[tuple[dict, bool]]:
-    return [(json.loads((ROOT / "results/final_results.json").read_text()), False),
-            (json.loads((ROOT / "results/recent_models_results.json").read_text()), True)]
+    return [(json.loads((ROOT / "results/final_results.json").read_text()), False)]  # 4.0.0: one table
 
 
 def logo(c: dict) -> str:
@@ -110,7 +109,7 @@ def dimensions_svg(c: dict, res: list[tuple[dict, bool]]) -> str:
         v = [lb.cl(R, m, d)["test"] for m, R, _ in rs if lb.cl(R, m, d)["test"] is not None]
         return sum(v) / len(v)
     dims = sorted(dims, key=mean)
-    x0, sw, cw, top, rh = 190, 64, 80, 44, 28
+    x0, sw, cw, top, rh = 250, 64, 80, 44, 28
     w = x0 + sw + cw * len(dims) + 16
     h = top + rh * len(rs) + 10
     best = {d: max(lb.cl(R, m, d)["test"] for m, R, _ in rs if lb.cl(R, m, d)["test"] is not None) for d in dims}

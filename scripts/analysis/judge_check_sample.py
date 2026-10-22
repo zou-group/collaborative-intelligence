@@ -19,7 +19,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-R = json.loads((ROOT / "results/final_results.json").read_text())
+R = json.loads((ROOT / "results/3.0.0/final_results.json").read_text())
 PER_DIM = 10
 
 

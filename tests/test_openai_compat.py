@@ -26,14 +26,23 @@ class _Mock:
             def do_POST(self):  # noqa: N802
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 mock.requests.append({"path": self.path, "auth": self.headers.get("Authorization"), "body": body})
+                reply = mock.replies.pop(0)
+                if "_status" in reply:  # an error answer: that status and body
+                    data = json.dumps(reply["_body"]).encode()
+                    self.send_response(reply["_status"])
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                    return
                 msg = {"role": "assistant", "content": None, "x_unknown_message_field": [1, 2]}
-                msg.update(mock.replies.pop(0))
+                msg.update({k: v for k, v in reply.items() if not k.startswith("_")})
                 out = {"id": "cmpl-mock", "object": "chat.completion", "created": 0, "model": body["model"],
                        "x_unknown_top_level": {"a": 1}, "system_fingerprint": None,
                        "choices": [{"index": 0, "message": msg, "x_unknown_choice": True,
                                     "finish_reason": "tool_calls" if msg.get("tool_calls") else "stop"}],
                        "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 150,
-                                 "x_unknown_usage": 3}}
+                                 "x_unknown_usage": 3, **reply.get("_usage", {})}, **reply.get("_top", {})}
                 data = json.dumps(out).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -214,3 +223,97 @@ def test_missing_setup_names_the_route_or_the_key(monkeypatch):
     assert llm.missing_setup("gemini-3.8-flash") == "gemini-3.8-flash: GEMINI_API_KEY not set (add it to .env)"
     assert "no base_url" in llm.missing_setup("no-url")
     assert llm.missing_setup("Qwen/Qwen3-14B") is None  # local vLLM: no key
+
+
+# ------------------------------------------------------------------ OpenRouter's data policy
+def test_every_openrouter_request_carries_the_data_policy(live, monkeypatch):
+    """data_collection deny + zdr + require_parameters on every request that goes to OpenRouter (an openrouter: name, or an
+    entry with OpenRouter's URL), whatever else the entry's `provider` asks; recorded; the billed cost is the call's."""
+    mock = _Mock([{"content": "hi", "_usage": {"cost": 0.00123}, "_top": {"provider": "Google"}}])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setattr(llm, "_openrouter_models", {})
+    llm.OPENAI_COMPAT["openrouter:google/gemini-4-argon"] = {
+        "base_url": mock.url, "extra": {"provider": {"order": ["google-vertex"], "zdr": False, "data_collection": "allow"}}}
+    try:
+        assert llm.call_model("openrouter:google/gemini-4-argon", "s", [{"role": "user", "content": "x"}], max_tokens=50)["text"] == "hi"
+    finally:
+        mock.close()
+    body = mock.requests[0]["body"]
+    assert body["provider"] == {"order": ["google-vertex"], **llm.OPENROUTER_PROVIDER_POLICY}
+    assert llm.OPENROUTER_PROVIDER_POLICY == {"data_collection": "deny", "zdr": True, "require_parameters": True}
+    assert live[0]["extra_body"]["provider"]["data_collection"] == "deny" and live[0]["extra_body"]["provider"]["zdr"] is True
+    assert live[0]["openrouter"] == {"provider": "Google", "billed_usd": 0.00123} and live[0]["cost_usd"] == pytest.approx(0.00123)
+    rc = llm.run_config(["openrouter:google/gemini-4-argon"])
+    assert rc["openrouter_provider_policy"] == llm.OPENROUTER_PROVIDER_POLICY
+    # an entry with OpenRouter's URL under another name (the hosted Qwen3-14B partner of docs/running.md) gets it too;
+    # its reasoning-effort variant keeps it; other providers never get a provider field
+    llm.OPENAI_COMPAT["Qwen/Qwen3-14B"] = {"base_url": "https://openrouter.ai/api/v1", "api_key_env": "OPENROUTER_API_KEY",
+                                           "model": "qwen/qwen3-14b", "extra": {"reasoning": {"effort": "none"}}}
+    assert llm.openai_compat_config("Qwen/Qwen3-14B")["extra"]["provider"] == llm.OPENROUTER_PROVIDER_POLICY
+    assert llm.openai_compat_config("openrouter:google/gemini-4-argon@high")["extra"]["provider"]["zdr"] is True
+    llm.OPENAI_COMPAT["other"] = {"base_url": "https://api.example.com/v1", "api_key_env": "K"}
+    assert "provider" not in json.dumps(llm.openai_compat_config("other")) and "provider" not in json.dumps(llm.openai_compat_config("gemini-4-argon"))
+    assert "openrouter_provider_policy" not in llm.run_config(["gemini-4-argon", "claude-opus-5-5"])
+
+
+def test_no_compliant_openrouter_endpoint_fails_clearly_and_is_not_retried(live, monkeypatch):
+    err = {"error": {"message": "No endpoints found matching your data policy (Zero data retention). Configure: "
+                                "https://openrouter.ai/settings/privacy", "code": 404}}
+    mock = _Mock([{"_status": 404, "_body": err}, {"content": "must not be reached"}])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setattr(llm, "_openrouter_models", {})
+    llm.OPENAI_COMPAT["openrouter:qwen/qwen3.8-max-0902"] = {"base_url": mock.url}
+    try:
+        with pytest.raises(llm.OpenRouterPolicyError, match="data policy"):
+            llm.call_model("openrouter:qwen/qwen3.8-max-0902", "s", [{"role": "user", "content": "x"}], max_tokens=50)
+    finally:
+        mock.close()
+    assert len(mock.requests) == 1 and mock.replies  # one request: never retried, never sent without the policy
+
+
+def test_missing_setup_names_an_openrouter_model_without_a_zero_retention_endpoint(monkeypatch):
+    monkeypatch.setattr(llm, "OPENAI_COMPAT", {})
+    monkeypatch.setattr(llm, "_compat_resolved", {})
+    monkeypatch.setattr(llm, "_openrouter_models", {"a/kept": {}, "a/retained": {}})
+    monkeypatch.setattr(llm, "_openrouter_zdr", {"ids": {"a/kept"}})
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.delenv("HARNESS_DRY_RUN", raising=False)
+    assert llm.missing_setup("openrouter:a/kept") is None and llm.missing_setup("openrouter:a/kept@high") is None
+    assert "zero data retention" in llm.missing_setup("openrouter:a/retained")
+    monkeypatch.setattr(llm, "_openrouter_zdr", {"ids": None})  # the list could not be fetched: the call enforces it
+    assert llm.missing_setup("openrouter:a/retained") is None
+
+
+def test_a_200_response_with_an_error_and_no_choices_is_retried(live, monkeypatch):
+    """OpenRouter passes some upstream failures on as HTTP 200 with an error object and no choices; a 429 or 5xx there is
+    waited out like any other (it used to end the run on a TypeError), anything else fails with the provider's message."""
+    monkeypatch.setattr(llm.time, "sleep", lambda s: None)
+    mock = _Mock([{"_status": 200, "_body": {"error": {"code": 429, "message": "upstream rate limit"}}},
+                  {"content": "hi"},
+                  {"_status": 200, "_body": {"error": {"code": 400, "message": "bad request upstream"}}}])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setattr(llm, "_openrouter_models", {})
+    llm.OPENAI_COMPAT["openrouter:google/gemini-3.8-flash"] = {"base_url": mock.url}
+    try:
+        out = llm.call_model("openrouter:google/gemini-3.8-flash", "s", [{"role": "user", "content": "x"}], max_tokens=50)
+        assert out["text"] == "hi" and len(mock.requests) == 2
+        with pytest.raises(llm.ProviderBodyError, match="bad request upstream"):
+            llm.call_model("openrouter:google/gemini-3.8-flash", "s", [{"role": "user", "content": "x"}], max_tokens=50)
+    finally:
+        mock.close()
+
+
+def test_a_provider_safety_block_is_recorded_as_a_refusal(live, monkeypatch):
+    """Gemini through OpenRouter blocks some prompts with HTTP 200 and an error object (code 403, "Gemini blocked the
+    request: SAFETY"): the call returns an empty refused turn (call_model's meta carries the refusal, as for Anthropic's
+    stop_reason "refusal"), sent once and never retried, so score.py excludes the scenario instead of the run being lost."""
+    mock = _Mock([{"_status": 200, "_body": {"error": {"code": 403, "message": "Gemini blocked the request: SAFETY"}}}])
+    monkeypatch.setenv("OPENROUTER_API_KEY", "or-key")
+    monkeypatch.setattr(llm, "_openrouter_models", {})
+    llm.OPENAI_COMPAT["openrouter:google/gemini-3.8-flash"] = {"base_url": mock.url}
+    try:
+        out = llm.call_model("openrouter:google/gemini-3.8-flash", "s", [{"role": "user", "content": "x"}], max_tokens=50)
+        assert out["text"] == "" and out["stop_reason"] == "refusal" and len(mock.requests) == 1
+        assert out["refusal"]["category"] == "provider_block"
+    finally:
+        mock.close()
