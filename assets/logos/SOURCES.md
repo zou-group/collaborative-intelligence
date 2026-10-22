@@ -15,6 +15,10 @@ back to one automatically when a logo file is missing).
 | `qwen.svg` (leaderboard and avatar badge for Qwen 3.7 Max; the symbol alone) | Qwen 3.7 Max | Wikimedia Commons, [File:Qwen logo.svg](https://commons.wikimedia.org/wiki/File:Qwen_logo.svg) | CC0 1.0 as stated on Commons; trademark restrictions apply |
 | `qwen-wordmark.svg` (kept, not shown by default) | Qwen 3.7 Max | Wikimedia Commons, [File:Qwen Logo.svg](https://commons.wikimedia.org/wiki/File:Qwen_Logo.svg), from the Qwen GitHub repository | Apache License 2.0 |
 | `deepseek.svg` | DeepSeek V4 Pro and DeepSeek V4.1 Flash (DeepSeek) | Wikimedia Commons, [File:DeepSeek-icon.svg](https://commons.wikimedia.org/wiki/File:DeepSeek-icon.svg) | MIT licence (as released by DeepSeek) |
+| `gemini.svg` | Gemini 4 Argon, Gemini 3.8 Flash (Google; benchmark 4.0.0) | Wikimedia Commons, [File:Google Gemini icon 2025.svg](https://commons.wikimedia.org/wiki/File:Google_Gemini_icon_2025.svg), fetched 2026-10-21 | Public domain; trademark restrictions apply |
+| `grok.svg` | Grok 4.7 (xAI; benchmark 4.0.0) | Wikimedia Commons, [File:Grok logo without text.svg](https://commons.wikimedia.org/wiki/File:Grok_logo_without_text.svg), fetched 2026-10-21 | Public domain; trademark restrictions apply |
+| `mistral.svg` | Mistral Large 4 (Mistral AI; benchmark 4.0.0) | Wikimedia Commons, [File:Mistral AI logo (2025–).svg](https://commons.wikimedia.org/wiki/File:Mistral_AI_logo_(2025%E2%80%93).svg), fetched 2026-10-21 | Public domain; trademark restrictions apply |
+| `meta.svg` (not shown yet: Llama 4 Maverick's 4.0.0 card is incomplete) | Llama 4 Maverick (Meta) | Wikimedia Commons, [File:Meta Platforms Inc. logo (cropped).svg](https://commons.wikimedia.org/wiki/File:Meta_Platforms_Inc._logo_(cropped).svg), fetched 2026-10-21 | Public domain; trademark restrictions apply |
 
 Notes
 
@@ -28,6 +32,7 @@ Notes
   [File:Z.ai (formerly Zhipu AI)(2025 logo).jpg](https://commons.wikimedia.org/wiki/File:Z.ai_(formerly_Zhipu_AI)(2025_logo).jpg),
   is a 197 by 65 pixel white-on-black JPEG that would have to be cropped to fit the leaderboard, so the site shows its
   neutral monogram badge ("Z") instead.
+- Nemotron 3 Ultra (NVIDIA) is shown with its monogram badge ("N") as well, as in the paper.
 
 ## Affiliation marks
 

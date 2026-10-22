@@ -116,7 +116,7 @@
     const table = svg('circle', { class: 'table', cx: 300, cy: 178, r: 92 });
     const partners = C.partners.slice(0, 2);
     const S = {
-      model: seat('model', 300, 86, 'the model being tested', `one of ${L.models.length}`),
+      model: seat('model', 300, 86, 'the model being tested', `one of ${CI.L4 ? CI.L4.n_models : L.models.length}`),
       scripted: seat('scripted', 392, 178, 'scripted teammate', 'speaks fixed lines'),
       p1: seat('partner', 208, 178, 'live teammate', PARTNER_NAME[partners[0]] || partners[0], { logo: PARTNER_LOGO[partners[0]] }),
       p2: seat('partner', 300, 270, 'live teammate', PARTNER_NAME[partners[1]] || partners[1], { logo: PARTNER_LOGO[partners[1]] }),

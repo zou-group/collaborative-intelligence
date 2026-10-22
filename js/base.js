@@ -71,7 +71,7 @@
 
   // ---------------------------------------------------------------- avatars and logos
   CI.logo = (m, cls) => {
-    if (!m.logo) return el('span', { class: 'nologo' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true', text: m.maker.slice(0, 1) });
+    if (!m.logo) return el('span', { class: 'nologo' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true', text: m.mono || m.maker.slice(0, 1) });
     const img = el('img', { src: m.logo, alt: '', class: cls || null });
     img.addEventListener('error', () => img.replaceWith(el('span', { class: 'nologo', text: m.maker.slice(0, 1) })));
     return img;
@@ -161,13 +161,41 @@
         initBestName: M[b.model].name, initBest: `${b.passed} of ${b.tests}`, initWorstName: M[w.model].name, initWorst: `${w.passed} of ${w.tests}` });
     }
     if (CI.F.gap) { const g = CI.F.gap.rows.find(r => r.dimension === 'resisting_unsafe_pressure'); if (g) V.resistOpen = g.open; }
+    // the 4.0.0 board (site/data/leaderboard_v4.json, built by build_v4.py): the leaderboard, the results and the update
+    const L4 = D.leaderboard_v4;
+    if (L4) {
+      const r4 = L4.models, d4 = r4.filter(m => !m.high), M4 = Object.fromEntries(r4.map(m => [m.id, m]));
+      const f4 = L4.groups.frontier.ids, o4 = L4.groups.open.ids, at = m => m.name + (m.high ? ' at high effort' : '');
+      const dm = (ids, k, f) => CI.mean(ids.map(id => M4[id].dims[k][f || 'test']).filter(v => v !== null));
+      // the models scored on both versions, at the default setting: how far each moved, and whether the order held
+      const both = d4.filter(m => CI.byName(m.name)), v3 = m => CI.byName(m.name).score;
+      let agree = 0, disagree = 0;
+      both.forEach((a, i) => both.slice(i + 1).forEach(b => { const s = (v3(a) - v3(b)) * (a.score - b.score); if (s > 0) agree++; else if (s < 0) disagree++; }));
+      Object.assign(V, {
+        version4: L4.version, nModels4: L4.n_models, nHigh4: L4.n_high, nRows4: r4.length, runs4: L4.runs,
+        nClosed4: d4.filter(m => !m.open).length, nOpen4: d4.filter(m => m.open).length,
+        topName4: at(r4[0]), topScore4: r4[0].score, secondName4: at(r4[1]), secondScore4: r4[1].score,
+        topDefaultName4: d4[0].name, topDefaultScore4: d4[0].score, lowName4: at(r4[r4.length - 1]), lowScore4: r4[r4.length - 1].score,
+        frontier4: L4.groups.frontier.score, open4: L4.groups.open.score, gapPts4: L4.groups.frontier.score - L4.groups.open.score,
+        safeMin4: Math.min(...f4.flatMap(id => ['resisting_unsafe_pressure', 'whistleblowing'].map(k => M4[id].dims[k].test))),
+        confFrontierStrict4: dm(f4, 'handling_conflict', 'strict'), confFrontier4: dm(f4, 'handling_conflict'),
+        eiFrontier4: dm(f4, 'emotional_intelligence'), initFrontier4: dm(f4, 'taking_initiative'), initOpen4: dm(o4, 'taking_initiative'),
+        shareFrontier4: dm(f4, 'sharing_and_seeking_information'), shareOpen4: dm(o4, 'sharing_and_seeking_information'),
+        nBoth: both.length, movedMean: CI.mean(both.map(m => Math.abs(m.score - v3(m)))), movedMax: Math.max(...both.map(m => Math.abs(m.score - v3(m)))),
+        tauVersions: (agree - disagree) / (agree + disagree),
+        // the leaderboard rates the analysis sections open with (as in the paper): resisting pressure, and taking over
+        // (test against baseline, which for a takeover is the model starting the original scenario itself)
+        resistOpen4: dm(o4, 'resisting_unsafe_pressure'),
+        takeTest4: dm(f4, 'taking_over'), takeStart4: dm(f4, 'taking_over', 'baseline'),
+      });
+    }
   }
   function fillValues() {
     for (const n of $$('[data-k]')) {
       const v = CI.V[n.dataset.k];
       if (v === undefined || v === null) { console.error('no value for', n.dataset.k); n.textContent = '–'; continue; }
       const f = n.dataset.f;
-      n.textContent = typeof v === 'number' ? (f === '0' ? CI.fmt0(v) : f === '1' ? CI.fmt1(v) : CI.fmtN(v)) : v;
+      n.textContent = typeof v === 'number' ? (f === '0' ? CI.fmt0(v) : f === '1' ? CI.fmt1(v) : f === '2' ? v.toFixed(2) : CI.fmtN(v)) : v;
     }
   }
 
@@ -309,18 +337,21 @@
     }
   }
   function footer() {
-    const d = new Date(CI.D.leaderboard.generated + 'T00:00:00Z');
-    const nice = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    CI.rc($('#post-date'), nice);
+    const nice = g => new Date(g + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+    CI.rc($('#post-date'), nice(CI.D.leaderboard.generated), CI.L4 ? ` · Updated ${nice(CI.L4.generated)}` : '');
+    for (const n of $$('[data-date="v4"]')) n.textContent = CI.L4 ? nice(CI.L4.generated) : '';
   }
 
   // ---------------------------------------------------------------- boot
   async function boot() {
     // a page can name the data it needs
-    const names = (document.body.dataset.data || 'leaderboard,dimensions,examples,findings,dataset').split(',');
+    const names = (document.body.dataset.data || 'leaderboard,leaderboard_v4,dimensions,examples,findings,dataset').split(',');
     const got = await Promise.all(names.map(n => fetch(`data/${n}.json${VERSION ? '?v=' + VERSION : ''}`).then(r => { if (!r.ok) throw new Error(n); return r.json(); })));
     names.forEach((n, i) => { CI.D[n] = got[i]; });
-    for (const d of [...CI.D.dimensions.dimensions, ...CI.D.leaderboard.dimensions]) if (RENAME[d.key]) Object.assign(d, RENAME[d.key]);
+    // optional: scores other teams reported on the 3.0.0 board; the page renders without them
+    try { const r = await fetch(`data/reported_v3.json${VERSION ? '?v=' + VERSION : ''}`); CI.D.reported_v3 = r.ok ? await r.json() : null; } catch (err) { CI.D.reported_v3 = null; }
+    CI.L4 = CI.D.leaderboard_v4 || null;
+    for (const d of [...CI.D.dimensions.dimensions, ...CI.D.leaderboard.dimensions, ...(CI.L4 ? CI.L4.dimensions : [])]) if (RENAME[d.key]) Object.assign(d, RENAME[d.key]);
     for (const ex of (CI.D.examples ? CI.D.examples.examples : [])) if (RENAME[ex.dimension]) ex.dimension_name = RENAME[ex.dimension].name;
     for (const m of CI.D.leaderboard.models) CI.M[m.id] = m;
     CI.F = Object.fromEntries(CI.D.findings.findings.map(f => [f.id, f.data]));

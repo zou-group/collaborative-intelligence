@@ -26,39 +26,60 @@
 
   // ---------------------------------------------------------------- Figure 1: the leaderboard
   // one colour per maker, so families read at a glance; the whiskers are the 95% interval
-  const MAKER = { OpenAI: '#1f9d6a', Anthropic: '#d97757', DeepSeek: '#4d6bfe', 'Moonshot AI': '#e0443e', 'Z.ai': '#14a3a3', Alibaba: '#7b5ce6' };
+  const MAKER = { OpenAI: '#1f9d6a', Anthropic: '#d97757', DeepSeek: '#4d6bfe', 'Moonshot AI': '#e0443e', 'Z.ai': '#14a3a3', Alibaba: '#7b5ce6',
+    Google: '#4285f4', xAI: '#3a3a3a', 'Mistral AI': '#fa520f', NVIDIA: '#76b900', Meta: '#0866ff' };
   CI.makerColor = m => MAKER[m.maker] || '#8d97a8';
+  // the board of each major version: 4.0.0 (the current one) and 3.0.0 (the first release, as published). A major version's
+  // scores are not ranked with an earlier version's, so the two are shown one at a time.
+  const VERSIONS = () => [CI.L4 ? { k: '4', L: CI.L4, label: 'v4.0.0', note: 'current' } : null, { k: '3', L: CI.D.leaderboard, label: 'v3.0.0', note: 'first release' }].filter(Boolean);
   CI.add(function hero() {
-    const box = $('#chart-hero'), L = CI.D.leaderboard, T = [0, 25, 50, 75, 100];
-    const ranked = L.models.slice().sort((a, b) => a.rank - b.rank);
+    const box = $('#chart-hero');
+    let ver = VERSIONS()[0].k, docBound = false, closeMenu = () => {};
+    const draw = () => heroBoard(VERSIONS().find(v => v.k === ver));
+    function heroBoard(V) {
+    const L = V.L, T = [0, 25, 50, 75, 100], label = m => m.label || m.name;
+    // the 3.0.0 board also shows scores other teams reported on it (data/reported_v3.json, built by build_reported.py),
+    // marked as reported: they are not our runs and are not given a rank
+    const reported = V.k === '3' && CI.D.reported_v3 ? CI.D.reported_v3.models : [];
+    const ranked = [...L.models.slice().sort((a, b) => a.rank - b.rank), ...reported];
     const shown = new Set(ranked.map(m => m.id));
     // the headline is the score on all scenarios; Public and Private are the same score on the released and the held-out
     // scenarios (benchmark/split.json, read by build_data.py)
     const split = L.split;
     // one tab for the overall score and one per dimension, the least solved dimension first
-    const meanOn = k => { const v = ranked.map(m => m.dims[k]).filter(c => c && c.test !== null).map(c => c.test); return v.reduce((a, b) => a + b, 0) / v.length; };
+    const meanOn = k => { const v = L.models.map(m => m.dims[k]).filter(c => c && c.test !== null).map(c => c.test); return v.reduce((a, b) => a + b, 0) / v.length; };
     const dimKeys = Object.keys(ranked[0].dims).sort((a, b) => meanOn(a) - meanOn(b));
     let view = 'all';
     const on = m => { if (view === 'all') return { s: m.score, ci: m.ci }; const c = m.dims[view]; return c && c.test !== null ? { s: c.test, ci: c.test_ci } : null; };
+    const repTip = m => {
+      const c = view === 'all' ? null : m.dims[view];
+      return el('div', null, el('strong', { text: label(m) + (c ? ` · ${CI.dim(view).name}` : '') }), el('p', { class: 'tip-ver', text: 'Reported by humans&, not run by us' }),
+        el('table', null, CI.trow(c ? 'Test pass rate' : 'Score', fmt1(c ? c.test : m.score) + (c ? '%' : '')), CI.trow('Scenarios', `the ${m.n_scenarios} released only`),
+          CI.trow('Reasoning effort', m.effort), CI.trow('System prompt', 'Ampersand\'s own')),
+        el('p', { class: 'tip-ver', text: `Source: ${m.source.replace(/^https:\/\//, '')}, ${m.retrieved}` }));
+    };
     const tip = m => {
-      if (view === 'all') return el('div', null, el('strong', { text: m.name }), el('table', null, CI.trow('Score', fmt1(m.score)), CI.trow('95% interval', `${fmt1(m.ci[0])} to ${fmt1(m.ci[1])}`),
+      if (m.reported) return repTip(m);
+      if (view === 'all') return el('div', null, el('strong', { text: label(m) }), el('p', { class: 'tip-ver', text: `Benchmark ${V.label}` + (m.high ? ', high reasoning effort' : '') }), el('table', null, CI.trow('Score', fmt1(m.score)), CI.trow('95% interval', `${fmt1(m.ci[0])} to ${fmt1(m.ci[1])}`),
         split ? CI.trow(`Public (${split.n_public} released)`, fmt1(m.public)) : null, split ? CI.trow(`Private (${split.n_private} held out)`, fmt1(m.private)) : null,
         CI.trow('Alone', fmt1(m.alone) + '%'), CI.trow('Baseline', m.baseline === null ? 'not run' : fmt1(m.baseline) + '%'), CI.trow('Scenarios scored', `${m.n_gated} of ${m.n_scenarios}`)));
-      const c = m.dims[view], head = el('strong', { text: `${m.name} · ${CI.dim(view).name}` });
+      const c = m.dims[view], head = el('strong', { text: `${label(m)} · ${CI.dim(view).name}` });
       if (!c || c.test === null) return el('div', null, head, el('p', { text: c && c.not_run ? 'Not run: ' + c.not_run + '.' : 'Not run.' }));
       return el('div', null, head, el('table', null, CI.trow('Test pass rate', fmt1(c.test) + '%'), CI.trow('95% interval', `${fmt1(c.test_ci[0])} to ${fmt1(c.test_ci[1])}`),
         CI.trow('Alone', fmt1(c.alone) + '%'), CI.trow('Baseline', c.baseline === null ? 'not run' : fmt1(c.baseline) + '%'), CI.trow('Scenarios scored', `${c.n_gated} of ${c.n_scenarios}`)));
     };
     const rowFor = m => {
       const v = on(m), sp = view === 'all' ? split : null;
-      const r = el('div', { class: 'lbr' + (v ? '' : ' na'), tabindex: 0, 'aria-label': v ? `${m.name}: ${fmt1(v.s)}, 95% interval ${fmt1(v.ci[0])} to ${fmt1(v.ci[1])}` + (sp ? `; public ${fmt1(m.public)}, private ${fmt1(m.private)}` : '') : `${m.name}: not run` },
-        el('span', { class: 'lb' }, CI.logo(m), el('span', { class: 'nm', text: m.name }), m.open ? el('span', { class: 'tg', text: '[open]' }) : null, m.recent ? el('span', { class: 'tg', text: '[new]' }) : null),
+      const aria = !v ? `${m.name}: not run` : m.reported ? `${label(m)}: ${fmt1(v.s)}, reported by humans& on the released scenarios only`
+        : `${label(m)}: ${fmt1(v.s)}, 95% interval ${fmt1(v.ci[0])} to ${fmt1(v.ci[1])}` + (sp ? `; public ${fmt1(m.public)}, private ${fmt1(m.private)}` : '');
+      const r = el('div', { class: 'lbr' + (v ? '' : ' na') + (m.high ? ' hi' : '') + (m.reported ? ' rep' : ''), tabindex: 0, 'aria-label': aria },
+        el('span', { class: 'lb' }, CI.logo(m), el('span', { class: 'nm', text: m.name }), m.high ? el('span', { class: 'tg hi', text: '[high]' }) : null, m.open ? el('span', { class: 'tg', text: '[open]' }) : null, m.recent ? el('span', { class: 'tg', text: '[new]' }) : null, m.reported ? el('span', { class: 'tg rp', text: '[reported]' }) : null),
         v ? el('span', { class: 'tr' },
           el('i', { class: 'bar', style: `width:${v.s}%; background:${CI.makerColor(m)}` }),
-          el('i', { class: 'wh', style: `left:${v.ci[0]}%; width:${v.ci[1] - v.ci[0]}%` }),
+          v.ci ? el('i', { class: 'wh', style: `left:${v.ci[0]}%; width:${v.ci[1] - v.ci[0]}%` }) : null,
           el('i', { class: 'mk', style: `left:${v.s}%` })) : el('span', { class: 'tr' }),
-        v ? el('span', { class: 'vl' }, el('b', { text: fmt1(v.s) }), el('span', { class: 'rg', text: `${fmt0(v.ci[0])}–${fmt0(v.ci[1])}` })) : el('span', { class: 'vl', text: 'not run' }),
-        sp ? el('span', { class: 'pp pu', text: fmt1(m.public) }) : null, sp ? el('span', { class: 'pp pr', text: fmt1(m.private) }) : null);
+        v ? el('span', { class: 'vl' }, el('b', { text: fmt1(v.s) }), el('span', { class: 'rg', text: v.ci ? `${fmt0(v.ci[0])}–${fmt0(v.ci[1])}` : 'public' })) : el('span', { class: 'vl', text: 'not run' }),
+        sp ? el('span', { class: 'pp pu', text: fmt1(m.public) }) : null, sp ? el('span', { class: 'pp pr', text: m.private === null ? '–' : fmt1(m.private) }) : null);
       CI.tipOn(r, () => tip(m));
       r.__m = m;
       return r;
@@ -66,14 +87,19 @@
     // the model filter, as on most public leaderboards
     const count = el('span', { class: 'cnt' });
     const btn = el('button', { type: 'button', class: 'lb-filter', 'aria-expanded': 'false', 'aria-controls': 'lb-filter-menu' }, 'Models ', count, el('span', { class: 'chev', html: '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5"/></svg>' }));
-    const checks = ranked.map(m => { const c = el('input', { type: 'checkbox', checked: true }); c.addEventListener('change', () => { if (c.checked) shown.add(m.id); else shown.delete(m.id); paint(); }); return el('label', null, c, CI.logo(m), m.name); });
+    const checks = ranked.map(m => { const c = el('input', { type: 'checkbox', checked: true }); c.addEventListener('change', () => { if (c.checked) shown.add(m.id); else shown.delete(m.id); paint(); }); return el('label', null, c, CI.logo(m), label(m)); });
     const quick = (t, f) => el('button', { type: 'button', text: t, onclick: () => { shown.clear(); ranked.filter(f).forEach(m => shown.add(m.id)); paint(); } });
     const menu = el('div', { class: 'lb-menu', id: 'lb-filter-menu', hidden: true },
-      el('div', { class: 'quick' }, quick('All', () => true), quick('Frontier', m => !m.open), quick('Open weights', m => m.open), quick('Main runs', m => !m.recent)), el('div', { class: 'list' }, ...checks));
+      el('div', { class: 'quick' }, quick('All', () => true), quick('Closed', m => !m.open), quick('Open weights', m => m.open),
+        V.k === '3' ? quick('Main runs', m => !m.recent) : quick('Default effort', m => !m.high)), el('div', { class: 'list' }, ...checks));
     btn.addEventListener('click', e => { e.stopPropagation(); menu.hidden = !menu.hidden; btn.setAttribute('aria-expanded', String(!menu.hidden)); });
     menu.addEventListener('click', e => e.stopPropagation());
-    document.addEventListener('click', () => { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !menu.hidden) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); btn.focus(); } });
+    closeMenu = focus => { if (menu.hidden) return; menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); if (focus) btn.focus(); };
+    if (!docBound) {
+      docBound = true;
+      document.addEventListener('click', () => closeMenu(false));
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMenu(true); });
+    }
     const axis = () => el('div', { class: 'lbr axis' }, el('span', { class: 'lb' }), el('span', { class: 'tr' }, ...T.map(t => el('span', { style: `left:${t}%`, text: t }))), el('span', { class: 'vl' }));
     const hcell = (cls, name, n, title) => el('span', { class: cls, title }, el('b', { text: name }), el('i', { text: n }));
     const head = () => el('div', { class: 'lbr hd', 'aria-hidden': 'true' }, el('span', { class: 'lb', text: 'Model' }), el('span', { class: 'tr' }),
@@ -104,14 +130,24 @@
       checks.forEach((l, i) => { $('input', l).checked = shown.has(ranked[i].id); });
       count.textContent = `(${shown.size}/${ranked.length})`;
     }
-    rc(box, el('div', { class: 'lb-head' }, el('h2', { class: 'lb-title', text: 'Leaderboard' }), el('div', { class: 'lb-fwrap' }, btn, menu)), tabs, card);
+    // the version link: the current version is the default; a small text button shows the previous one, and back
+    const cur = VERSIONS()[0], prev = VERSIONS().find(o => o.k !== cur.k);
+    const vs = prev ? el('button', { type: 'button', class: 'lb-prev', onclick: () => { ver = V.k === cur.k ? prev.k : cur.k; draw(); } },
+      V.k === cur.k ? `See previous version (${prev.label})` : `Back to current version (${cur.label})`) : null;
+    const note = V.k === '3'
+      ? el('p', { class: 'lb-note', text: `The first release's board as published: one test run per scenario, conflict scored pass or fail. It is not ranked with ${VERSIONS()[0].label}.` +
+          (reported.length ? ' The hatched row is a score humans& reported for its own model, on the released scenarios only.' : '') })
+      : el('p', { class: 'lb-note', text: `${L.n_models} models, tested at different reasoning efforts.` });
+    rc(box, el('div', { class: 'lb-head' }, el('h2', { class: 'lb-title', text: 'Leaderboard' }), el('div', { class: 'lb-fwrap' }, btn, menu)), el('div', { class: 'lb-sub' }, note, vs), tabs, card);
     render();
     if (!CI.reduced()) CI.onVisible(card, () => card.classList.add('anim'), 0.2);
+    }
+    draw();
   });
 
   // ---------------------------------------------------------------- results: where models fall short, dimension by dimension
   CI.add(function results() {
-    const box = $('#chart-results'), L = CI.D.leaderboard, M = CI.M, g = CI.F.gap;
+    const box = $('#chart-results'), L = CI.L4 || CI.D.leaderboard, g = CI.F.gap;
     if (!g) return;
     const rowsD = g.rows.slice().sort((a, b) => b.frontier - a.frontier);
     // the least solved dimension first (lowest mean over every model), so the open problems lead
@@ -139,7 +175,7 @@
             return rw;
           }), el('div', { class: 'db axis' }, el('span'), el('span', { class: 'tr' }, ...[0, 25, 50, 75, 100].map(t => el('span', { style: `left:${t}%`, text: t }))), el('span'))));
       } else {
-        const ranked = L.models.slice().sort((a, b) => a.rank - b.rank);
+        const ranked = L.models.filter(m => !m.high).sort((a, b) => a.rank - b.rank);
         const head = el('tr', null, el('th', { class: 'm', text: 'Model' }), ...order.map(k => el('th', { title: dname(k), text: CI.dim(k).short })), el('th', { class: 'ov', text: 'Overall' }));
         const trs = ranked.map(m => el('tr', null,
           el('td', { class: 'm' }, el('span', { class: 'in' }, CI.logo(m), el('span', { class: m.open ? 'o' : '', text: m.name }))),
