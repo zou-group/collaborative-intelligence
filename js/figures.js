@@ -134,10 +134,8 @@
     const cur = VERSIONS()[0], prev = VERSIONS().find(o => o.k !== cur.k);
     const vs = prev ? el('button', { type: 'button', class: 'lb-prev', onclick: () => { ver = V.k === cur.k ? prev.k : cur.k; draw(); } },
       V.k === cur.k ? `See previous version (${prev.label})` : `Back to current version (${cur.label})`) : null;
-    const note = V.k === '3'
-      ? el('p', { class: 'lb-note', text: `The first release's board as published: one test run per scenario, conflict scored pass or fail. It is not ranked with ${VERSIONS()[0].label}.` +
-          (reported.length ? ' The hatched row is a score humans& reported for its own model, on the released scenarios only.' : '') })
-      : el('p', { class: 'lb-note', text: `${L.n_models} models, tested at different reasoning efforts.` });
+    // the previous board has no note; the empty one keeps the version link in its place
+    const note = el('p', { class: 'lb-note', text: V.k === '3' ? '' : `${L.n_models} models, tested at different reasoning efforts.` });
     rc(box, el('div', { class: 'lb-head' }, el('h2', { class: 'lb-title', text: 'Leaderboard' }), el('div', { class: 'lb-fwrap' }, btn, menu)), el('div', { class: 'lb-sub' }, note, vs), tabs, card);
     render();
     if (!CI.reduced()) CI.onVisible(card, () => card.classList.add('anim'), 0.2);
