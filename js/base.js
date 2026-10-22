@@ -336,9 +336,11 @@
       });
     }
   }
+  const nice = g => new Date(g + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+  // the date under the title follows the board on show: the update's date for 4.0.0, the first release's for 3.0.0
+  CI.showDate = k => CI.rc($('#post-date'), CI.L4 && k !== '3' ? `Updated ${nice(CI.L4.generated)}` : nice(CI.D.leaderboard.generated));
   function footer() {
-    const nice = g => new Date(g + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
-    CI.rc($('#post-date'), nice(CI.D.leaderboard.generated), CI.L4 ? ` · Updated ${nice(CI.L4.generated)}` : '');
+    if (!$('#post-date').textContent) CI.showDate();
     for (const n of $$('[data-date="v4"]')) n.textContent = CI.L4 ? nice(CI.L4.generated) : '';
   }
 

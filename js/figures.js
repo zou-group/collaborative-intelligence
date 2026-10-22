@@ -35,7 +35,7 @@
   CI.add(function hero() {
     const box = $('#chart-hero');
     let ver = VERSIONS()[0].k, docBound = false, closeMenu = () => {};
-    const draw = () => heroBoard(VERSIONS().find(v => v.k === ver));
+    const draw = () => { heroBoard(VERSIONS().find(v => v.k === ver)); if (CI.showDate) CI.showDate(ver); };
     function heroBoard(V) {
     const L = V.L, T = [0, 25, 50, 75, 100], label = m => m.label || m.name;
     // the 3.0.0 board also shows scores other teams reported on it (data/reported_v3.json, built by build_reported.py),
