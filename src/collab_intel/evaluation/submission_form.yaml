@@ -1,0 +1,46 @@
+# Collaborative Intelligence: the submission record. A developer sends one email (docs/submit.md); the maintainers
+# fill this in from it and check it (it turns into the registry entries of models/):
+#   uv run python scripts/check_submission.py submission.yaml            # checks the form; sends nothing
+#   uv run python scripts/check_submission.py submission.yaml --live     # checks the endpoint, synthetic prompts only
+# NEVER put a key in this file. docs/submit.md says how a key is sent.
+schema: collab-intel-submission/1
+terms: "2026-10-22"              # the version of the terms you accept (docs/submit.md#the-terms)
+organization: Example Lab
+contact:
+  name: Jane Doe
+  email: jane@example.com
+
+model:
+  name: Example 1.0              # as it should appear on the leaderboard
+  developer: Example Lab         # if not the organization above
+  snapshot: example-1.0-2026-10-15   # the exact version to evaluate; at release it must be the same model
+  open_weights: false
+  released: false                # false: not public yet; the result is held until release (docs/submit.md)
+  release_date: 2026-12-01       # planned release date, or unknown (only for an unreleased model)
+
+access:
+  # How we reach the model, one of:
+  #   public_api      it is on a public API we already call (Anthropic, OpenAI, Google, Together AI, OpenRouter)
+  #   account_access  you give our existing API account access to it on your platform; no key is sent
+  #   dedicated_key   you send a key made for this evaluation only (your own endpoint, or a provider above)
+  #   weights         open weights we serve on our own GPUs; the prompts never leave our machines
+  route: dedicated_key
+  provider: openai_compatible    # anthropic | openai | google | together | openrouter | openai_compatible
+  model_id: example-1.0-preview  # the id we call
+  endpoint: https://api.example.com/v1   # openai_compatible only: a chat-completions API with tool calls
+  data_policy: "requests are not logged, kept or used for training"   # how your API treats our requests
+  # weights:                     # route weights only
+  #   repo: example/example-1.0  # a Hugging Face repository (gated is fine: we ask for access)
+  #   revision: 0123abcd         # the commit to evaluate
+  #   serving: "vLLM, --tool-call-parser hermes, --reasoning-parser qwen3"   # how to serve it with tool calls
+
+configurations: [lightest]       # the rows to score: lightest (the leaderboard's default, always), and any of
+                                 # low, medium, high, xhigh, max as labelled rows of their own
+reasoning:                       # the request fields that select each configuration (needed for openai_compatible
+  lightest: {reasoning_effort: none}   # and weights; {} if the API has no reasoning setting)
+  # high: {reasoning_effort: high}
+
+price_usd_per_mtok: [1.0, 4.0]   # your price, input and output per million tokens (for the estimate and the card)
+publication: at_release          # when_done (a released model) or at_release (published when the model is public,
+                                 # and no later than 30 days after)
+notes: ""

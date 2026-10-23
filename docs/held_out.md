@@ -35,7 +35,7 @@ overlap), and the two rankings agree closely (Spearman 0.95).
   is limited, what is and is not shared, and how the set will be refreshed.
 - **Scoring your model on it.** The [quick start](../README.md#quick-start) scores a model on the released scenarios
   (comparable with the Public column). To have it scored on the held-out scenarios too, see
-  [getting a model scored on the held-out set](submit.md): the maintainers run them with
+  [submitting a model](submit.md): the maintainers run them with
   `scripts/evaluate_model.py`, the same harness, partners, judges, readings and scoring as every leaderboard model,
   and report the Private and All scores in a result card; the held-out scenarios themselves are not shared. The rules
   are in the [evaluation policy](evaluation_policy.md).
