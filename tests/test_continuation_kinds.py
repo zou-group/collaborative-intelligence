@@ -386,8 +386,9 @@ def _sandbox_env(d: Path) -> Path:
 
 
 def test_an_environment_replay_ends_where_the_original_submitted(tmp_path, monkeypatch):
-    """A submit and a send_message in the same step: the channel keeps the later post (not a '[submit]' line), and the
-    replay of the whole run still ends there, so the clock's round-1 line (after the submit, never reached) is no divergence."""
+    """A submit and a send_message in the same step: the channel keeps both posts in order (since 2026-10-24; before, only
+    the later one), and the replay of the whole run still ends there, so the clock's round-1 line (after the submit, never
+    reached) is no divergence."""
     from collab_intel.harness import checker, episode, scripted
     from collab_intel.harness.episode import NoEnvironmentDivergence, run_episode
     monkeypatch.setitem(checker.CHECKERS, "kinds_escalated", lambda t, spec: {"pass": True, "score": 1.0, "outcome": "x"})
@@ -404,6 +405,7 @@ def test_an_environment_replay_ends_where_the_original_submitted(tmp_path, monke
     d = _sandbox_env(tmp_path / "sb")
     t0 = json.loads(json.dumps(run_episode(d, "manipulation", "m", [], seed=0), default=str))
     assert t0["ended"] == "submitted" and t0["rounds_run"] == 1 and t0["messages"][-1]["text"] == "Shipped, thanks."
+    assert t0["messages"][-2]["text"] == "[submit] done" and t0["messages"][-1]["same_turn"] is True
     monkeypatch.setattr(episode, "call_model", _no_call)
     with pytest.raises(NoEnvironmentDivergence):
         run_episode(d, "manipulation", "m", [], seed=0, continue_from={

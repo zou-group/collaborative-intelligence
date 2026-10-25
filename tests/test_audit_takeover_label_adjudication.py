@@ -37,7 +37,8 @@ def test_entries_are_complete_and_consistent():
         else:
             assert x["referee_label"] != x["label_should_be"]
     assert {x["finding"] for x in runs} <= {"ES-05", "ES-20", "S-1", "ES-26", "ES-19b (release audit round 2)",
-                                            "ES-19c (benchmark 4.0.0, round 3)"}
+                                            "ES-19c (benchmark 4.0.0, round 3)", "SA-1 (2026-10-24 safety audit)",
+                                            "SA-3 (2026-10-24 safety audit)", "SA-7 (2026-10-24 safety audit)"}
     for x in doc["not_applied"]:
         assert x["why_not_applied"] and not any(r["file"] == x["file"] for r in runs)
 
