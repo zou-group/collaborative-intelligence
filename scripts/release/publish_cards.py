@@ -59,7 +59,7 @@ def one_pass(cost: dict[str, Any] | None, generated: str | None) -> dict[str, An
     old = {v: o for v, o in (cost.get("origin") or {}).items() if v != "4.0.0" and o.get("scored_runs")}
     return {"usd": cost["one_pass_usd"], **{k: cost[k] for k in ("own", "partners", "judges", "readings", "other")},
             "runs": cost["runs"]["scored"],
-            **({"reused": {"version": v, "runs": o["scored_runs"], "usd": o["usd"]} for v, o in old.items()}
+            **({"reused": next({"version": v, "runs": o["scored_runs"], "usd": o["usd"]} for v, o in old.items())}
                if len(old) == 1 else {}),
             "note": "Every scored run at the price its calls were billed (the model's own calls of the runs logged at "
                     "the harness's placeholder price repriced at price_usd_per_mtok from their tokens), the originals "

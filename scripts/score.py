@@ -160,7 +160,8 @@ DEFAULT_HELDOUT = "results/heldout_aggregates.json"
 # --protocol (module docstring, "Seed protocol"): the published 3.0.0 results ran the test version at seed 0 outside
 # taking over (TAKING_OVER kept its three seeds); a protocol fixes the test seeds of every other dimension
 sys.path.insert(0, str(ROOT / "src"))
-from collab_intel.release import SEED_PROTOCOLS as PROTOCOLS, TAKING_OVER  # noqa: E402
+from collab_intel.release import SEED_PROTOCOLS as PROTOCOLS  # noqa: E402
+from collab_intel.release import TAKING_OVER
 
 
 def test_seeds(sc: dict[str, Any], dim: str, scored: dict[str, Any], seeds: list[int] | None = None,

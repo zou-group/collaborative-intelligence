@@ -201,7 +201,7 @@ def test_rescoring_never_reads_the_new_keys_so_stored_verdicts_stand():
     assert changed == []
     if changed_own:
         warnings.warn(f"{len(changed_own)} of your own EI runs score differently with the current checkers "
-                      f"(rescore them with scripts/score.py --rescore): {changed_own[:5]}")
+                      f"(rescore them with scripts/score.py --rescore): {changed_own[:5]}", stacklevel=2)
     if n_archive == 0:
         pytest.skip(f"the run archive is not in this checkout ({n} runs of other models checked)")
     assert n_archive >= 700, f"only {n_archive} archive runs: the run archive is incomplete (scripts/fetch_runs.py)"
