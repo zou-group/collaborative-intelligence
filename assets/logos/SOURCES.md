@@ -19,6 +19,8 @@ back to one automatically when a logo file is missing).
 | `grok.svg` | Grok 4.7 (xAI; benchmark 4.0.0) | Wikimedia Commons, [File:Grok logo without text.svg](https://commons.wikimedia.org/wiki/File:Grok_logo_without_text.svg), fetched 2026-10-21 | Public domain; trademark restrictions apply |
 | `mistral.svg` | Mistral Large 4 (Mistral AI; benchmark 4.0.0) | Wikimedia Commons, [File:Mistral AI logo (2025–).svg](https://commons.wikimedia.org/wiki/File:Mistral_AI_logo_(2025%E2%80%93).svg), fetched 2026-10-21 | Public domain; trademark restrictions apply |
 | `meta.svg` (not shown yet: Llama 4 Maverick's 4.0.0 card is incomplete) | Llama 4 Maverick (Meta) | Wikimedia Commons, [File:Meta Platforms Inc. logo (cropped).svg](https://commons.wikimedia.org/wiki/File:Meta_Platforms_Inc._logo_(cropped).svg), fetched 2026-10-21 | Public domain; trademark restrictions apply |
+| `zai.svg` | GLM-5.3 (Z.ai) | Wikimedia Commons, [File:Z.ai (company logo).svg](https://commons.wikimedia.org/wiki/File:Z.ai_(company_logo).svg), fetched 2026-11-01: the three shapes of the Z, filled black, without the dark rounded square behind them; view box cropped to the Z | Public domain; trademark restrictions apply |
+| `nvidia.svg` | Nemotron 3 Ultra (NVIDIA) | Wikimedia Commons, [File:NVIDIA logo.svg](https://commons.wikimedia.org/wiki/File:NVIDIA_logo.svg), from NVIDIA's bionemo repository, fetched 2026-11-01: the eye only (the green path), without the wordmark; view box cropped to the eye | Apache License 2.0; trademark restrictions apply |
 
 Notes
 
@@ -28,11 +30,8 @@ Notes
   non-commercial editorial use, which this research site is, but they are stricter than the others (no alteration,
   revocable). Check them again before any commercial use of the site.
 - No logo was drawn, traced or approximated by hand.
-- GLM-5.3 (Z.ai, formerly Zhipu AI) has no logo file. The public-domain mark on Wikimedia Commons,
-  [File:Z.ai (formerly Zhipu AI)(2025 logo).jpg](https://commons.wikimedia.org/wiki/File:Z.ai_(formerly_Zhipu_AI)(2025_logo).jpg),
-  is a 197 by 65 pixel white-on-black JPEG that would have to be cropped to fit the leaderboard, so the site shows its
-  neutral monogram badge ("Z") instead.
-- Nemotron 3 Ultra (NVIDIA) is shown with its monogram badge ("N") as well, as in the paper.
+- `zai.svg` and `nvidia.svg` keep the official paths unchanged; only the shapes shown, the fill of the Z and the
+  view box differ from the source files. The paper uses the same two marks (`docs/paper_ste/logo/`).
 
 ## Affiliation marks
 

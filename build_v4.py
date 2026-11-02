@@ -30,7 +30,8 @@ LOGO = {"OpenAI": ("assets/logos/openai.svg", True), "Anthropic": ("assets/logos
         "DeepSeek": ("assets/logos/deepseek.svg", False), "Moonshot AI": ("assets/logos/kimi-logomark-light.svg", False),
         "Alibaba": ("assets/logos/qwen.svg", False), "Google": ("assets/logos/gemini.svg", False),
         "xAI": ("assets/logos/grok.svg", True), "Mistral AI": ("assets/logos/mistral.svg", False),
-        "Meta": ("assets/logos/meta.svg", False), "Z.ai": (None, False), "NVIDIA": (None, False)}
+        "Meta": ("assets/logos/meta.svg", False), "Z.ai": ("assets/logos/zai.svg", True),
+        "NVIDIA": ("assets/logos/nvidia.svg", False)}
 # the frontier group of the analyses (the paper's): the three models of the first release's study
 FRONTIER = ["gpt-6-astra", "claude-opus-5-5", "claude-fable-5-1"]
 

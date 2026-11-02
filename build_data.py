@@ -70,10 +70,9 @@ RECENT = {
                                                      open=True, color="#0f8fa8", color_dark="#2aa3bb",
                                                      logo="assets/logos/deepseek.svg", logo_kind="mark",
                                                      logo_mono=False),
-    # no logo file: Z.ai's public-domain mark on Commons is a small white-on-black JPEG (assets/logos/SOURCES.md); the
-    # site shows its monogram badge instead
+    # the Z of Z.ai's mark (Commons SVG), drawn black without its dark square (assets/logos/SOURCES.md)
     "together:zai-org/GLM-5.3": dict(name="GLM-5.3", short="GLM", maker="Z.ai", open=True, color="#b0397a",
-                                     color_dark="#d0609a", logo=None, logo_kind="mark", logo_mono=False),
+                                     color_dark="#d0609a", logo="assets/logos/zai.svg", logo_kind="mark", logo_mono=True),
     # added 2026-10-09: two frontier releases and OpenAI's open-weight model
     "gpt-6.1-sol": dict(name="GPT-6.1 Sol", short="Sol", maker="OpenAI", open=False, color="#5b8def", color_dark="#7aa2f2",
                         logo="assets/logos/openai.svg", logo_kind="mark", logo_mono=True),
