@@ -16,8 +16,10 @@ still applies its own rules around it (the empty-reply retry, the usage log and 
 Same request as the harness's own route for the same model, where Inspect allows it:
   - the output budget (llm.output_budget on the equivalent harness name, e.g. gpt-5-mini for openai/gpt-5-mini);
   - the reasoning setting the leaderboard used for that model (llm.MODEL_EXTRAS, OPENAI_EFFORT / RESPONSES_REASONING,
-    ROUTE_EXTRA_BODY, the gemini-/openrouter: presets), unless the eval sets its own (`--reasoning-effort`, `--effort`,
-    `--reasoning-tokens` or `extra_body`) or the task's `leaderboard_reasoning` is false;
+    ROUTE_EXTRA_BODY, the gemini-/openrouter: presets, else the model's leaderboard card), in the GenerateConfig field
+    Inspect's provider sends it from (Claude's thinking off is reasoning_effort="none"), unless the eval sets its own
+    (`--reasoning-effort`, `--effort`, `--reasoning-tokens` or `extra_body`) or the task's `leaderboard_reasoning` is
+    false;
   - temperature only where the harness would send it (the judges' 0, if a judge is an Inspect role);
   - the price (llm.cost_usd on the equivalent name; Inspect's own cost, else 5 / 25 USD per million tokens, otherwise).
 Every request to an OpenRouter model carries the harness's OpenRouter data policy (llm.OPENROUTER_PROVIDER_POLICY).
@@ -28,6 +30,7 @@ and tool calls. Providers that require their reasoning back (OpenAI's Responses 
 from __future__ import annotations
 
 import contextvars
+import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -94,6 +97,18 @@ def harness_equivalent(name: str) -> str | None:
     return same if p in want else None
 
 
+_THINKING_OFF = ("disabled", "between_tools")  # the harness's thinking-off settings for Claude (llm.MODEL_EXTRAS)
+
+
+def _card_reasoning(same: str) -> dict[str, Any]:
+    """The reasoning setting the model's leaderboard card records as sent (results/cards/<name>.json), for a setting made
+    outside llm.py's tables when the leaderboard ran (GPT-6 Luna's effort came from HARNESS_OPENAI_EFFORT)."""
+    p = llm.ROOT / "results" / "cards" / f"{same}.json"
+    if not p.exists():
+        return {}
+    return (json.loads(p.read_text()).get("model", {}).get("reasoning") or {}).get("sent") or {}
+
+
 def leaderboard_settings(same: str | None) -> dict[str, Any]:
     """GenerateConfig fields for the reasoning setting the harness sends for this model (empty when it sends none)."""
     if not same:
@@ -105,11 +120,18 @@ def leaderboard_settings(same: str | None) -> dict[str, Any]:
         effort = (extras.pop("output_config", None) or {}).get("effort")
         if effort:
             out["effort"] = effort
+        if (extras.get("thinking") or {}).get("type") in _THINKING_OFF:
+            # Inspect's anthropic provider runs Claude 4.7+ with adaptive thinking and does not take `thinking` from
+            # extra_body; it turns thinking off for reasoning_effort="none", sending what the harness sends
+            # ("disabled", or "between_tools" for Sonnet 5.5)
+            extras.pop("thinking")
+            out["reasoning_effort"] = "none"
         if extras:
             out["extra_body"] = extras
         return out
     if p == "openai":
-        effort = llm.OPENAI_EFFORT.get(same) or (llm.RESPONSES_REASONING.get(same) or {}).get("effort")
+        effort = (llm.OPENAI_EFFORT.get(same) or (llm.RESPONSES_REASONING.get(same) or {}).get("effort")
+                  or _card_reasoning(same).get("reasoning_effort"))
         return {"reasoning_effort": effort} if effort else {}
     if p == "together":
         x = llm.ROUTE_EXTRA_BODY.get(same)

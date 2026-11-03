@@ -79,12 +79,30 @@ def test_output_budget_follows_the_harness_route(same):
 
 def test_leaderboard_reasoning_settings():
     assert br.leaderboard_settings("claude-opus-5-5") == {"effort": "low"}
-    assert br.leaderboard_settings("claude-sonnet-5-5") == {"extra_body": {"thinking": {"type": "between_tools"}}}
+    # Claude's thinking off goes in reasoning_effort="none", the field Inspect's provider sends it from
+    assert br.leaderboard_settings("claude-sonnet-5-5") == {"reasoning_effort": "none"}
+    assert br.leaderboard_settings("claude-haiku-5-5") == {"reasoning_effort": "none"}
     assert br.leaderboard_settings("gpt-6-astra") == {"reasoning_effort": "low"}
+    # GPT-6 Luna's effort was set by HARNESS_OPENAI_EFFORT when the leaderboard ran; its card records it
+    assert br.leaderboard_settings("gpt-6-luna") == {"reasoning_effort": "none"}
     assert br.leaderboard_settings("together:openai/gpt-oss-120b") == {
         "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
     assert br.leaderboard_settings("Qwen/Qwen3-14B") == {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
     assert br.leaderboard_settings("gpt-5-mini") == {} and br.leaderboard_settings(None) == {}
+
+
+@pytest.mark.parametrize("same,sent", [("claude-haiku-5-5", {"type": "disabled"}),
+                                       ("claude-sonnet-5-5", {"type": "between_tools"})])
+def test_claude_requests_send_the_leaderboards_thinking(monkeypatch, same, sent):
+    """The request Inspect's anthropic provider builds from the bridge's settings carries the thinking setting the
+    harness sends for the model (llm.MODEL_EXTRAS): Claude 4.7+ otherwise runs with adaptive thinking."""
+    from inspect_ai.model import GenerateConfig, get_model
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    assert llm.MODEL_EXTRAS[same]["thinking"] == sent
+    api = get_model("anthropic/" + same).api
+    params, *_ = api.completion_config(GenerateConfig(max_tokens=3000, **br.leaderboard_settings(same)))
+    assert params["thinking"] == sent
 
 
 def test_openrouter_requests_carry_the_data_policy(monkeypatch):
