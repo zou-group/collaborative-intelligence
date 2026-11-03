@@ -298,8 +298,8 @@ points at this repository. The draft is [`inspect_register/eval.yaml`](inspect_r
 
 What remains:
 
-- [ ] **The arXiv paper.** The submission form asks for its versioned URL (`https://arxiv.org/abs/<id>v1`), which goes
-  into `arxiv` in place of the placeholder.
+- [x] **The arXiv paper.** [arXiv:2611.02633](https://arxiv.org/abs/2611.02633). The submission form asks for its
+  versioned URL, `https://arxiv.org/abs/2611.02633v1`, which is in `arxiv`.
 - [ ] **The public commit.** The branch must be in the public repository, which requires Sean's go-ahead. Its
   40-character SHA goes into `source.repository_commit`. The form's source URL is then
   `https://github.com/zou-group/collaborative-intelligence/blob/<sha>/src/collab_intel/inspect_eval/task.py#L<line>`,
