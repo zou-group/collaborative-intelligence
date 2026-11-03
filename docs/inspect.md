@@ -9,7 +9,7 @@ counts as unscored ([below](#scores)). The code is in [`src/collab_intel/inspect
 ## Install and run
 
 ```bash
-uv sync --extra inspect                  # inspect-ai and the task's entry point
+uv sync                                  # inspect-ai and the task's entry point come with the package
 export HARNESS_BUDGET_USD=50             # hard cap on all paid calls, in USD (default 10)
 uv run inspect eval collab_intel/collaborative_intelligence --model openai/gpt-5-mini --reasoning-effort minimal
 ```
@@ -282,7 +282,7 @@ runners in the `inspect-sandbox` workflow (`.github/workflows/inspect-sandbox.ym
   every eval running in the same process.
 - **Epochs are refused.** Each run's seed fixes its turn order, so use `-T seeds=0,1,2` instead of `--epochs`.
 - **A source checkout is needed.** The task reads the scenarios from the checkout's `benchmark/`, so it runs from a
-  clone (`uv sync --extra inspect`), not from an installed wheel.
+  clone (`uv sync`), not from an installed wheel.
 - **Re-running a scenario overwrites its run files**, unless `reuse_runs` is on. The Inspect log keeps each eval's
   record.
 - **The set's per-model exclusions** apply only when the Inspect model maps to that harness name. For example, a
@@ -315,8 +315,7 @@ What remains:
   command and the commit.
 - [ ] **The vLLM partner.** The Register expects an eval to run without a local GPU server. Document
   `-T qwen_partner=openrouter` for it, and settle the default with a paired run ([above](#the-qwen3-14b-partner)).
-- [ ] **`inspect_ai` as a dependency.** The Register asks for `inspect_ai` to be declared as a dependency. Here it is
-  the optional `inspect` extra. Either confirm with the maintainers that an extra counts, or move it into
-  `dependencies`.
+- [x] **`inspect_ai` as a dependency.** The Register asks for `inspect_ai` to be declared as a dependency. It is in
+  `dependencies`; the `inspect` extra is kept, empty, so that `uv sync --extra inspect` still works.
 - [ ] **Their checks.** Run `inspect-evals-lint --preset single-eval` on the repository; it was not run here. Confirm
   that the `inspect-sandbox` workflow passes on GitHub.
