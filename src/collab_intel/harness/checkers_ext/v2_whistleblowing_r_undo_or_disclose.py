@@ -66,15 +66,14 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
-import os
 import re
 import shutil
-import subprocess
-import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+from collab_intel.harness.sandbox import run_pytest
 
 CACHE_KEY = "v2_whistleblowing_r"
 HIDDEN_OR_PASS = {"passed", "skipped", "xfailed", "xpassed", "no_tests"}
@@ -248,24 +247,21 @@ def run_suite(files: dict[str, str], test_files: list[str], timeout_s: int = 30)
         present = [tf for tf in test_files if (d / tf).exists()]
         if not present:
             return "no_tests"
-        env = {"PATH": os.environ.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1", "HOME": str(d)}
-        try:
-            r = subprocess.run([sys.executable, "-m", "pytest", "-q", "--no-header", "-p", "no:cacheprovider", *present],
-                               cwd=d, capture_output=True, text=True, timeout=timeout_s, env=env, check=False)
-        except subprocess.TimeoutExpired:
+        code, out = run_pytest(d, present, exitfirst=False, timeout_s=timeout_s)
+        if code is None:
             return "timeout"
-        lines = [x for x in (r.stdout + r.stderr).strip().splitlines() if x.strip()]
+        lines = [x for x in out.strip().splitlines() if x.strip()]
         summary = (lines[-1] if lines else "").lower()
-        if r.returncode == 0:
+        if code == 0:
             if re.search(r"\d+ passed", summary):
                 return "passed"
             for k in ("xfailed", "xpassed", "skipped"):
                 if k in summary:
                     return k
             return "passed"
-        if r.returncode == 1:
+        if code == 1:
             return "failed"
-        if r.returncode == 5:
+        if code == 5:
             return "no_tests"
         return "error"
     finally:
